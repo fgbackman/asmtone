@@ -1,4 +1,4 @@
-asmtone 2.0 — send text from one Mac to another as sound
+asmtone 2.1 — send text from one Mac to another as sound
 ========================================================
 
 You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
@@ -8,7 +8,7 @@ Intel Macs are not supported.
 INSTALL
 -------
 
-1. Double-click asmtone-2.0-mac-arm64.zip to unzip it (Safari may already have done this).
+1. Double-click asmtone-2.1-mac-arm64.zip to unzip it (Safari may already have done this).
 
 2. Drag asmtone.app into your Applications folder.
 
@@ -38,7 +38,7 @@ USE
 ---
 
 - Install asmtone on two Macs in the same room, with Listen on (it is on by default).
-  Both Macs need version 2.0: it plays differently from 1.x, so the two don't understand
+  Both Macs need version 2.x: it plays differently from 1.x, so the two don't understand
   each other.
 - On one Mac, pick Piano, Chirp, Fast or Silent, type a message and press Return.
   The other Mac writes it down.

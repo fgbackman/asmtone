@@ -2,7 +2,7 @@
 //
 // A message on the air (each symbol is one note, or four tones at once in Fast):
 //
-//   100 ms silence
+//   300 ms silence (speakers fade in as sound starts: the first notes would be lost)
 //   preamble   8 symbols rising: tone 0 2 4 5 7 9 10 12 (on the piano: D4 G4 C5 D5 G5 C6 D6 G6)
 //   header     the payload length L, three times (6 nibbles), decided by majority
 //   body       payload + CRC-16 + Reed–Solomon parity, whitened, high nibble first
@@ -722,7 +722,7 @@ Ltt_done:
     add  sp, sp, #32
     ret
 
-// float _pre_score(rx *x0, mode *x1, long h x2) — if at least 7 of the 8 symbols ending at
+// float _pre_score(rx *x0, mode *x1, long h x2) — if at least 6 of the 8 symbols ending at
 // hop h are the preamble's (in every group, clearly enough), their summed quality; else -1. Leaf.
 _pre_score:
     ldr  w9, [x1, #M_K]
@@ -748,20 +748,25 @@ Lps_j:
     add  x15, x0, #R_HBEST
     add  x15, x15, x14, lsl #2
     mov  x17, #0
+    mov  x7, #0                       // groups playing the right tone
 Lps_g:
     ldrb w3, [x15, x17]
     cmp  w3, w16
-    b.ne Lps_miss
+    cinc x7, x7, eq
     add  x17, x17, #1
     cmp  x17, x11
     b.lo Lps_g
+    lsr  x8, x11, #2                  // all of them, or 3 of Fast's 4
+    sub  x8, x11, x8
+    cmp  x7, x8
+    b.lo Lps_miss
     fcmp s1, s2
     b.lt Lps_miss
     fadd s0, s0, s1
     b    Lps_next
 Lps_miss:
     add  x6, x6, #1
-    cmp  x6, #1
+    cmp  x6, #2
     b.hi Lps_no
 Lps_next:
     add  x12, x12, #1

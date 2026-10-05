@@ -1,4 +1,4 @@
-asmtone 1.2 — send text from one Mac to another as sound
+asmtone 2.0 — send text from one Mac to another as sound
 ========================================================
 
 You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
@@ -8,7 +8,7 @@ Intel Macs are not supported.
 INSTALL
 -------
 
-1. Double-click asmtone-1.2-mac-arm64.zip to unzip it (Safari may already have done this).
+1. Double-click asmtone-2.0-mac-arm64.zip to unzip it (Safari may already have done this).
 
 2. Drag asmtone.app into your Applications folder.
 
@@ -38,14 +38,16 @@ USE
 ---
 
 - Install asmtone on two Macs in the same room, with Listen on (it is on by default).
+  Both Macs need version 2.0: it plays differently from 1.x, so the two don't understand
+  each other.
 - On one Mac, pick Piano, Chirp, Fast or Silent, type a message and press Return.
   The other Mac writes it down.
 
      Piano   piano notes                   about 3 characters a second
      Chirp   short bird-like chirps        about 14 characters a second
      Fast    four tones at once            about 50 characters a second
-     Silent  18-19 kHz, too high for most  about 12 characters a second
-             adults to hear (children and dogs may)
+     Silent  17.6-19.6 kHz, too high for   about 12 characters a second
+             most adults to hear (children and dogs may)
 
   The receiver hears all four at once; you only choose a mode when sending.
   One message holds up to about 240 characters (fewer for emoji and accents).
@@ -57,8 +59,9 @@ USE
   in another app.
 
 Tips
-- Turn the volume up to about half or more. Fast likes the Macs within a few metres;
-  Piano and Chirp carry further and cope better with noise.
+- Turn the volume up to about half or more.
+- Distance: Piano, Chirp and Silent work across a room (they cope with the room's echo);
+  Fast needs the Macs within a few feet of each other.
 - A Mac doesn't hear its own messages (it stops listening while it plays).
 - "N bytes repaired" means some sound was damaged and asmtone fixed it.
   A red line means a message was too damaged to fix: send it again, or try another mode.

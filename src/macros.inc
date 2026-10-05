@@ -119,7 +119,7 @@
 .set MODE_FAST,   2
 .set MODE_SILENT, 3
 .set NPRE,        8          // preamble symbols
-.set LEAD,        4800       // 100 ms of silence before a message
+.set LEAD,        14400      // 300 ms of silence before a message: speakers fade in when sound starts
 .set PLEN,        11520      // how long a piano note rings (240 ms)
 .set RING,        8192       // receive ring (stored twice, so any window is contiguous)
 .set HIST,        128        // hops of history per mode

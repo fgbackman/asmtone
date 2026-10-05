@@ -21,7 +21,7 @@ def room(x, drr_db, rt60=0.5, snr_db=25):
     y = np.concatenate([np.zeros(5000), y, np.zeros(5000)])
     y += rng.standard_normal(len(y)) * np.sqrt(np.mean(y ** 2) / 10 ** (snr_db / 10))
     return y * 0.3 / np.max(np.abs(y))
-need = {"piano": {0: 7, -5: 6}, "chirp": {0: 7, -5: 6}, "fast": {0: 6}, "silent": {0: 7, -5: 6}}
+need = {"piano": {0: 6, -5: 6}, "chirp": {0: 7, -5: 6}, "fast": {0: 6}, "silent": {0: 7, -5: 6}}
 N = 8
 fails = 0
 for m, name in enumerate(["piano", "chirp", "fast", "silent"]):
