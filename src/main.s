@@ -31,8 +31,8 @@
     ldr  \reg, [\reg]
 .endm
 .macro PUT reg, sym
-    ADRL x9, \sym
-    str  \reg, [x9]
+    ADRL x17, \sym
+    str  \reg, [x17]
 .endm
 
 .section __TEXT,__const
@@ -1271,15 +1271,6 @@ _set_listen:
     cmp  x19, #0
     fcsel d0, d0, d1, ne
     bl   _objc_msgSend
-    CLS  Ls_NSUserDefaults
-    MSG0 Ls_standardUD
-    mov  x20, x0
-    ADRL x0, Ls_k_listenoff
-    bl   _nsstr
-    mov  x3, x0
-    mov  x0, x20
-    eor  x2, x19, #1
-    MSG2 Ls_setBoolForKey
     LEAVE 0
 
 // long _mic_allowed(void) — 0 if the person has turned the microphone off for us
@@ -1511,9 +1502,19 @@ _m_textchg:
 // listenToggled: (the checkbox or a menu item)
 _m_listen:
     ENTER 0
-    GET  x0, _g_listening
-    eor  x0, x0, #1
+    GET  x19, _g_listening
+    eor  x19, x19, #1
+    mov  x0, x19
     bl   _set_listen
+    CLS  Ls_NSUserDefaults                // remember what was asked for (not whether it worked)
+    MSG0 Ls_standardUD
+    mov  x20, x0
+    ADRL x0, Ls_k_listenoff
+    bl   _nsstr
+    mov  x3, x0
+    mov  x0, x20
+    eor  x2, x19, #1
+    MSG2 Ls_setBoolForKey
     LEAVE 0
 
 // heard: NSData from the receiver
