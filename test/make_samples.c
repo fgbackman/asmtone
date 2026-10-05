@@ -10,9 +10,9 @@ static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put16(FILE *f, uint16_t v) { fwrite(&v, 2, 1, f); }
 int main(int argc, char **argv) {
     const char *msg = argc > 1 ? argv[1] : "Hello from asmtone!";
-    const char *names[] = { "piano", "chirp", "fast" };
+    const char *names[] = { "piano", "chirp", "fast", "silent" };
     _modem_init();
-    for (int m = 0; m < 3; m++) {
+    for (int m = 0; m < 4; m++) {
         long n = _tx_render(m, (const unsigned char *)msg, (long)strlen(msg));
         if (!n) { fprintf(stderr, "too long for %s\n", names[m]); continue; }
         char path[256]; snprintf(path, sizeof path, "%s/%s.wav", argc > 2 ? argv[2] : ".", names[m]);

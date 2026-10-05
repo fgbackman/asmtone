@@ -23,6 +23,11 @@ Ls_t_cdrift: .asciz "chirp: with the clocks 200 ppm apart"
 Ls_t_burst:  .asciz "fast: a 30 ms burst of loud noise is repaired"
 Ls_t_two:    .asciz "chirp then fast, back to back: both heard"
 Ls_t_quiet:  .asciz "five seconds of hiss: nothing heard"
+Ls_t_silent: .asciz "silent: 18-19.4 kHz through a room with echoes and hiss"
+Ls_t_sdrift: .asciz "silent: with the clocks 200 ppm apart"
+Ls_t_phigh:  .asciz "piano: through a tiny speaker that loses the low notes"
+Ls_t_pdrift: .asciz "piano: with the clocks 200 ppm apart"
+Ls_t_stop:   .asciz "a message cut off half way is given up quickly"
 Ls_t_long:   .asciz "fast: the longest message (237 bytes)"
 Ls_t_max:    .asciz "a message one byte too long is refused"
 Ls_done:     .asciz "self-tests done"
@@ -35,6 +40,7 @@ Lk_e2:       .float 0.045
 Lk_hiss:     .float 0.01
 Lk_burst:    .float 0.3
 Lk_quiet:    .float 0.05
+Lk_hp:       .float 0.86424              // one pole of a 1.2 kHz high-pass
 .p2align 3
 Lk_drift:    .double 1.0002
 
@@ -132,6 +138,29 @@ _selftest:
     mov  x1, #8
     bl   _t_loop
     ADRL x1, Ls_t_long
+    bl   _result
+    mov  x0, #MODE_SILENT
+    mov  x1, #0
+    bl   _t_loop
+    ADRL x1, Ls_t_silent
+    bl   _result
+    mov  x0, #MODE_SILENT
+    mov  x1, #2
+    bl   _t_loop
+    ADRL x1, Ls_t_sdrift
+    bl   _result
+    mov  x0, #MODE_PIANO
+    mov  x1, #16
+    bl   _t_loop
+    ADRL x1, Ls_t_phigh
+    bl   _result
+    mov  x0, #MODE_PIANO
+    mov  x1, #2
+    bl   _t_loop
+    ADRL x1, Ls_t_pdrift
+    bl   _result
+    bl   _t_cut
+    ADRL x1, Ls_t_stop
     bl   _result
     bl   _t_two
     ADRL x1, Ls_t_two
@@ -333,7 +362,14 @@ _t_loop:
     mov  x1, #1440
     LDS  s0, Lk_burst
     bl   _t_noise
-3:  ADRL x9, _t_count
+3:  tbz  x20, #4, 4f                 // a small speaker: two passes of a 1.2 kHz high-pass
+    mov  x0, x24                      // (G4 comes out 20 dB down)
+    ldr  x1, [sp, #128]
+    bl   _t_highpass
+    mov  x0, x24
+    ldr  x1, [sp, #128]
+    bl   _t_highpass
+4:  ADRL x9, _t_count
     str  xzr, [x9]
     bl   _rx_reset
     mov  x0, x24
@@ -556,4 +592,71 @@ _t_quiet:
     ldr  x9, [x9]
     cmp  x9, #0
     cset x0, eq
+    LEAVE 0
+
+// _t_highpass(float *x, long n) — one pole, in place. Leaf.
+_t_highpass:
+    LDS  s3, Lk_hp
+    fmov s1, wzr                      // previous input
+    fmov s2, wzr                      // previous output
+    cbz  x1, 2f
+1:  ldr  s0, [x0]
+    fsub s4, s0, s1
+    fadd s4, s4, s2
+    fmul s4, s4, s3
+    fmov s1, s0
+    fmov s2, s4
+    str  s4, [x0], #4
+    subs x1, x1, #1
+    b.ne 1b
+2:  ret
+
+// long _t_cut(void) — a Fast message that stops after a third: the receiver reports it lost
+// within half a second of the silence, instead of waiting out the whole message
+_t_cut:
+    ENTER 16
+    mov  x0, #MODE_FAST
+    ADRL x1, _t_long
+    mov  x2, #200
+    bl   _tx_render
+    mov  x19, x0                      // the whole message (about 4.5 s)
+    mov  x20, #0xA9C0
+    movk x20, #0x3, lsl #16           // a 5 s stream
+    mov  x0, x20
+    mov  x1, #4
+    bl   _t_calloc
+    mov  x21, x0
+    mov  x22, #48000                  // only the first second of the message is played
+    ADRL x9, _tx_buf
+    ldr  x1, [x9]
+    mov  x0, x21
+    lsl  x2, x22, #2
+    CALLC memcpy
+    mov  x0, x20
+    mov  x1, x21
+    bl   _t_hiss
+    ADRL x9, _t_count
+    str  xzr, [x9]
+    bl   _rx_reset
+    mov  x0, x21                      // 1.5 s in: the message has stopped half a second ago
+    mov  x1, #0x2000
+    movk x1, #0x1, lsl #16            // 73728
+    bl   _t_feed
+    ADRL x9, _t_count
+    ldr  x23, [x9]
+    ADRL x9, _t_len
+    ldr  x24, [x9]
+    mov  x0, x21
+    CALLC free
+    cmp  x23, #1
+    b.ne 1f
+    cmp  x24, #-1
+    cset x0, eq
+    LEAVE 16
+1:  mov  x0, #0
+    LEAVE 16
+
+_t_calloc:
+    ENTER 0
+    CALLC calloc
     LEAVE 0

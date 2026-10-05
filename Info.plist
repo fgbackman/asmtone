@@ -15,9 +15,9 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
@@ -27,8 +27,8 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Text as sound: Piano, Chirp and Fast. Written in ARM64 assembly.</string>
+    <string>Text as sound: Piano, Chirp, Fast and Silent. Written in ARM64 assembly.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>asmtone listens for messages played as sound by another Mac running asmtone (piano notes, chirps or fast tones) and writes them down. Nothing is recorded or sent anywhere.</string>
+    <string>asmtone listens for messages played as sound by another Mac running asmtone (piano notes, chirps, fast tones or near-silent high tones) and writes them down. Nothing is recorded or sent anywhere.</string>
 </dict>
 </plist>

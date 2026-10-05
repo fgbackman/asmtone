@@ -11,9 +11,10 @@ A Cocoa app with a Dock icon and a menu-bar item, written in ARM64 assembly for 
 | Piano | notes of the G pentatonic scale, G4–G7; a rising arpeggio first, a C-major chord last | ~3 characters/s | 4 bad bytes / message |
 | Chirp | short bird-like slides, 4–6.8 kHz            | ~14 characters/s      | 6 bad bytes        |
 | Fast  | four tones at once, 1.5–4.5 kHz              | ~50 characters/s      | 8 bad bytes        |
+| Silent | one tone at a time, 18–19.4 kHz, faded in and out — above most adults' hearing | ~12 characters/s | 6 bad bytes |
 
-The receiver listens for all three at the same time — you only pick the mode when sending.
-One message carries up to 245 bytes in Piano, 241 in Chirp, 237 in Fast.
+The receiver listens for all four at the same time — you only pick the mode when sending.
+One message carries up to 245 bytes in Piano, 241 in Chirp and Silent, 237 in Fast.
 
 ## Using it
 
@@ -43,6 +44,15 @@ One message carries up to 245 bytes in Piano, 241 in Chirp, 237 in Fast.
   (16 tones per 4 registers, two samples per loop) measures each tone. The receiver keeps which
   tone won and by how much, waits for the preamble in every group, scores one symbol's worth of
   alignments and settles on the middle of the best ones, then reads a symbol every 8 hops.
+- **Piano notes in real rooms**: small speakers and echoes can bury a note's fundamental, and
+  its octave and fifth are other notes of the scale, so each note is scored as its own energy
+  plus half that of its 2nd and 3rd harmonics (tones 16–47 of the filter bank). Found with a
+  recording from the Mac mini; it's a test fixture now (`test/fixtures/room-piano.wav`).
+- **Giving up**: four symbols in a row with next to nothing in them and the receiver reports the
+  message lost instead of waiting for the rest; a preamble without a readable length is reported too.
+- **Save Last 30 Seconds of Sound** (menu bar / app menu, ⌘S) writes what the microphone heard to
+  `~/Developer/asmtone/recordings` (or the Desktop); `sh test/analyze.sh <wav>` replays it through
+  the receiver and prints every lock, symbol and result.
 - **Repairing** (`fec.s`): Reed–Solomon over GF(256) with 8 / 12 / 16 parity bytes (Berlekamp–Massey,
   Chien, Forney — the decoder from asmmesh's FM link with the parity count made a parameter),
   then a CRC-16/X.25 check.

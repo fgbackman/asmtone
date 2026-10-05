@@ -113,10 +113,11 @@
 // The modem
 // ---------------------------------------------------------------------------
 .set SR,          48000
-.set NMODES,      3
+.set NMODES,      4
 .set MODE_PIANO,  0
 .set MODE_CHIRP,  1
 .set MODE_FAST,   2
+.set MODE_SILENT, 3
 .set NPRE,        8          // preamble symbols
 .set LEAD,        4800       // 100 ms of silence before a message
 .set PLEN,        11520      // how long a piano note rings (240 ms)
@@ -136,6 +137,7 @@
 .set M_VOICE,     36         // 0 piano, 1 chirp, 2 fast
 .set M_AMP,       40         // float
 .set M_TAIL,      44         // samples after the last symbol
+.set M_HARM,      48         // 3: score each note with its 2nd and 3rd harmonics (tones 16-47)
 .set M_FREQ,      64         // 64 floats
 .set MODE_SHIFT,  9
 
@@ -157,5 +159,6 @@
 .set R_ENER,      1888       // 64 floats
 .set R_BYTES,     2144       // 272 bytes
 .set R_RSC,       2432       // 16 floats: alignment scores
-.set R_STATS,     2496       // u64 x 4: ok, repaired, lost, (spare)
+.set R_STATS,     2496       // u64 x 4: ok, repaired, lost, length unreadable
+.set R_LOWQ,      2528       // symbols in a row that were barely there
 .set RX_SHIFT,    12

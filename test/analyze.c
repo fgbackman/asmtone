@@ -9,8 +9,8 @@
 extern void _modem_init(void); extern void _rx_reset(void);
 extern void _rx_feed(const float *, long);
 extern unsigned char _rx[]; extern void *_rx_sink; extern long _rx_total;
-static const char *names[] = { "piano", "chirp", "fast" };
-static const int NG[] = { 1, 1, 4 }, K = 8;
+static const char *names[] = { "piano", "chirp", "fast", "silent" };
+static const int NG[] = { 1, 1, 4, 1 }, K = 8;
 static void sink(long m, const unsigned char *b, long len, long fixed) {
     if (len >= 0) printf("  >>> %s MESSAGE (%ld bytes, %ld repaired): %.*s\n", names[m], len, fixed, (int)len, b);
     else if (len == -1) printf("  >>> %s: too damaged to repair\n", names[m]);
@@ -27,11 +27,11 @@ int main(int argc, char **argv) {
     for (long i = 0; i < n; i++) { x[i] = pcm[i] / 32768.0f; if (abs(pcm[i]) > pk) pk = abs(pcm[i]); }
     printf("%s: %.1f s, peak %.0f/32767\n", argv[1], n / 48000.0, pk);
     _modem_init(); _rx_sink = (void *)sink; _rx_reset();
-    int lastst[3] = {0}; uint64_t lastnib[3] = {0}; int verbose = argc > 2;
+    int lastst[4] = {0}; uint64_t lastnib[4] = {0}; int verbose = argc > 2;
     for (long i = 0; i < n; i += 240) {
         long c = n - i < 240 ? n - i : 240;
         _rx_feed(x + i, c);
-        for (int m = 0; m < 3; m++) {
+        for (int m = 0; m < 4; m++) {
             unsigned char *r = _rx + m * 4096;
             int st = U32(r + 16), nib = U32(r + 20);
             uint64_t hop = U64(r + 8);
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
                     for (int k = 0; k < 8; k++) printf(" %.2f", F32(r + 2432 + 4 * k));
                     printf("; first data hop %lu\n", (unsigned long)U64(r + 40));
                 }
-                if (st == 0 && lastst[m] == 2) printf("%7.3fs %s: back to hunting after %d nibbles (need %d)\n", i / 48000.0, names[m], lastnib[m], U32(r + 36));
+                if (st == 0 && lastst[m] == 2) printf("%7.3fs %s: back to hunting after %d nibbles (need %d)\n", i / 48000.0, names[m], (int)lastnib[m], U32(r + 36));
                 lastst[m] = st;
             }
             if (st == 2 && nib != (int)lastnib[m]) {

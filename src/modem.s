@@ -15,6 +15,11 @@
 //   Piano    16 notes       150 ms   85 ms    8        ~3 characters/s
 //   Chirp    16, 4-6.8 kHz   36 ms   21 ms    12       ~14 characters/s
 //   Fast     4 x 16 at once  40 ms   21 ms    16       ~50 characters/s
+//   Silent   16, 18-19.4 kHz 40 ms   21 ms    12       ~12 characters/s, above most adults' hearing
+//
+// Piano notes are judged with their 2nd and 3rd harmonics added in (tones 16-47 of the bank):
+// small speakers and room echoes can bury a note's fundamental, and the octave or fifth above
+// it is another note of the scale.
 //
 // The receiver runs a Goertzel bank for every mode every 1/8 symbol, keeps which tone
 // won and how clearly, and watches for the preamble. Once it sees one it settles on
@@ -27,22 +32,28 @@ RODATA
 .globl _modes
 _modes:
 // ---- Piano: G major pentatonic, G4 .. G7 ----
-    .word 16, 1, 7200, 4096, 900, 8, 8, 1
-    .float 0.45
+    .word 48, 1, 7200, 4096, 900, 8, 8, 1
+    .float 0.30
     .word 0
     .float 0.30
     .word 14400
-    .space 16
+    .word 3
+    .space 12
     .float 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900, 880.0000, 1046.5000
     .float 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200, 2637.0200, 3135.9600
-    .space 384
+    .float 784.0000, 880.0000, 1046.5000, 1174.6600, 1318.5200, 1567.9800, 1760.0000, 2093.0000
+    .float 2349.3200, 2637.0200, 3135.9600, 3520.0000, 4186.0000, 4698.6400, 5274.0400, 6271.9200
+    .float 1176.0000, 1320.0000, 1569.7500, 1761.9900, 1977.7800, 2351.9700, 2640.0000, 3139.5000
+    .float 3523.9800, 3955.5300, 4703.9400, 5280.0000, 6279.0000, 7047.9600, 7911.0600, 9407.8800
+    .space 256
 // ---- Chirp: 16 tones on the 1024-point grid, 4.0 - 6.8 kHz, each sliding up into place ----
     .word 16, 1, 1728, 1024, 216, 8, 12, 0
     .float 0.45
     .word 1
     .float 0.50
     .word 4800
-    .space 16
+    .word 1
+    .space 12
     .float 4031.2500, 4218.7500, 4406.2500, 4593.7500, 4781.2500, 4968.7500, 5156.2500, 5343.7500
     .float 5531.2500, 5718.7500, 5906.2500, 6093.7500, 6281.2500, 6468.7500, 6656.2500, 6843.7500
     .space 384
@@ -52,7 +63,8 @@ _modes:
     .word 2
     .float 0.22
     .word 4800
-    .space 16
+    .word 1
+    .space 12
     .float 1500.0000, 1687.5000, 1875.0000, 2062.5000, 2250.0000, 2437.5000, 2625.0000, 2812.5000
     .float 3000.0000, 3187.5000, 3375.0000, 3562.5000, 3750.0000, 3937.5000, 4125.0000, 4312.5000
     .float 1546.8750, 1734.3750, 1921.8750, 2109.3750, 2296.8750, 2484.3750, 2671.8750, 2859.3750
@@ -62,6 +74,17 @@ _modes:
     .float 1640.6250, 1828.1250, 2015.6250, 2203.1250, 2390.6250, 2578.1250, 2765.6250, 2953.1250
     .float 3140.6250, 3328.1250, 3515.6250, 3703.1250, 3890.6250, 4078.1250, 4265.6250, 4453.1250
     .space 192
+// ---- Silent: 16 tones on the grid, 18.0 - 19.4 kHz, faded in and out over 5 ms ----
+    .word 16, 1, 1920, 1024, 240, 8, 12, 0
+    .float 0.40
+    .word 3
+    .float 0.50
+    .word 4800
+    .word 1
+    .space 12
+    .float 18000.0000, 18093.7500, 18187.5000, 18281.2500, 18375.0000, 18468.7500, 18562.5000, 18656.2500
+    .float 18750.0000, 18843.7500, 18937.5000, 19031.2500, 19125.0000, 19218.7500, 19312.5000, 19406.2500
+    .space 384
 
 _pre:       .byte 0, 2, 4, 5, 7, 9, 10, 12
 _chord:     .byte 2, 4, 5, 7               // C5 E5 G5 C6
@@ -73,6 +96,7 @@ Lk_tau:     .float -0.00037878787878787879 // -1 / 2640 (55 ms decay)
 Lk_att:     .float 0.0069444444444444444   // 1 / 144 (3 ms attack)
 Lk_tiny:    .float 1.0e-12
 Lk_tie:     .float 0.97
+Lk_lowq:    .float 0.25
 Lk_glide:   .float 0.85
 Lk_chordamp: .float 0.55
 
@@ -309,6 +333,25 @@ _rx_hop:
     cbz  w9, 1f
     ADRL x5, _hann
 1:  bl   _gz_bank
+    ldr  w9, [x20, #M_HARM]           // piano: each note's score counts its overtones too
+    cmp  w9, #3
+    b.ne Lh_nofold
+    add  x10, x21, #R_ENER
+    mov  x11, #0
+Lh_fold:
+    ldr  s0, [x10, x11, lsl #2]
+    add  x12, x11, #16
+    ldr  s1, [x10, x12, lsl #2]
+    add  x12, x11, #32
+    ldr  s2, [x10, x12, lsl #2]
+    fadd s1, s1, s2
+    fmov s3, #0.5
+    fmadd s0, s1, s3, s0              // note + (octave + fifth above) / 2
+    str  s0, [x10, x11, lsl #2]
+    add  x11, x11, #1
+    cmp  x11, #16
+    b.lo Lh_fold
+Lh_nofold:
 
     ldr  x22, [x21, #R_HOPN]          // h
     and  x9, x22, #(HIST - 1)
@@ -415,6 +458,7 @@ Lh_align:                             // score one symbol's worth of alignments
     str  wzr, [x21, #R_NIB]
     str  wzr, [x21, #R_NEED]
     str  wzr, [x21, #R_QSUM]
+    str  wzr, [x21, #R_LOWQ]
     b    Lh_done
 
 Lh_recv:
@@ -439,6 +483,13 @@ Lh_recv:
     cmp  x14, x24
     b.lo 7b
     str  w12, [x21, #R_NIB]
+    ldr  w9, [x21, #R_LOWQ]           // the sender has stopped (or we lost it): don't wait
+    LDS  s1, Lk_lowq                  // for the rest of a message that isn't coming
+    fcmp s6, s1
+    csinc w9, wzr, w9, ge
+    str  w9, [x21, #R_LOWQ]
+    cmp  w9, #4
+    b.hs Lh_gone
     ldr  w15, [x21, #R_NEED]
     cbnz w15, Lh_check
     cmp  w12, #6
@@ -479,6 +530,20 @@ Lh_check:
     bl   _rx_finish
     str  wzr, [x21, #R_STATE]
     b    Lh_done
+Lh_gone:                              // four symbols in a row of next to nothing
+    str  wzr, [x21, #R_STATE]
+    ldr  x11, [x21, #(R_STATS + 16)]
+    add  x11, x11, #1
+    str  x11, [x21, #(R_STATS + 16)]
+    ADRL x9, _rx_sink
+    ldr  x9, [x9]
+    cbz  x9, Lh_done
+    mov  x0, x19
+    add  x1, x21, #R_NIBS
+    mov  x2, #-1
+    mov  x3, #0
+    blr  x9
+    b    Lh_done
 Lh_nohdr:                             // a preamble with no sensible header: say so, hunt again
     str  wzr, [x21, #R_STATE]
     ldr  x11, [x21, #(R_STATS + 24)]
@@ -495,8 +560,8 @@ Lh_nohdr:                             // a preamble with no sensible header: say
 Lh_done:
     LEAVE 32
 
-// float _pre_score(rx *x0, mode *x1, long h x2) — summed quality if the 8 symbols
-// ending at hop h are the preamble in every group, else -1. Leaf.
+// float _pre_score(rx *x0, mode *x1, long h x2) — if at least 7 of the 8 symbols ending at
+// hop h are the preamble's (in every group, clearly enough), their summed quality; else -1. Leaf.
 _pre_score:
     ldr  w9, [x1, #M_K]
     mov  x10, #(NPRE - 1)
@@ -506,6 +571,7 @@ _pre_score:
     ldr  w11, [x1, #M_NG]
     ldr  s2, [x1, #M_QMIN]
     fmov s0, wzr
+    mov  x6, #0                       // symbols missed
     mov  x12, #0
     ADRL x13, _pre
 Lps_j:
@@ -516,9 +582,6 @@ Lps_j:
     and  x14, x14, #(HIST - 1)
     add  x15, x0, #R_HQ
     ldr  s1, [x15, x14, lsl #2]
-    fcmp s1, s2
-    b.lt Lps_no
-    fadd s0, s0, s1
     ldrb w16, [x13, x12]
     add  x15, x0, #R_HBEST
     add  x15, x15, x14, lsl #2
@@ -526,10 +589,19 @@ Lps_j:
 Lps_g:
     ldrb w3, [x15, x17]
     cmp  w3, w16
-    b.ne Lps_no
+    b.ne Lps_miss
     add  x17, x17, #1
     cmp  x17, x11
     b.lo Lps_g
+    fcmp s1, s2
+    b.lt Lps_miss
+    fadd s0, s0, s1
+    b    Lps_next
+Lps_miss:
+    add  x6, x6, #1
+    cmp  x6, #1
+    b.hi Lps_no
+Lps_next:
     add  x12, x12, #1
     cmp  x12, #NPRE
     b.lo Lps_j
@@ -783,7 +855,10 @@ Lsym:
     ldr  w9, [x20, #M_VOICE]
     cmp  w9, #1
     b.eq Lv_chirp
-    b.hi Lv_fast
+    cmp  w9, #2
+    b.eq Lv_fast
+    cmp  w9, #3
+    b.eq Lv_silent
     ldrb w9, [x22, x23]               // piano
     add  x10, x20, #M_FREQ
     ldr  s0, [x10, x9, lsl #2]
@@ -802,6 +877,7 @@ Lv_chirp:
     mov  x0, x24
     ldr  w1, [x20, #M_S]
     lsr  x2, x1, #2
+    mov  x3, #96
     bl   _v_tone
     b    Lsym_next
 Lv_fast:
@@ -818,10 +894,23 @@ Lvf_g:
     mov  x0, x24
     ldr  w1, [x20, #M_S]
     mov  x2, #0
+    mov  x3, #96
     bl   _v_tone
     add  x21, x21, #1
     cmp  x21, #4
     b.lo Lvf_g
+    b    Lsym_next
+Lv_silent:                            // one high tone, faded in and out over 5 ms
+    ldrb w9, [x22, x23]
+    add  x10, x20, #M_FREQ
+    ldr  s0, [x10, x9, lsl #2]
+    fmov s1, s0
+    ldr  s2, [x20, #M_AMP]
+    mov  x0, x24
+    ldr  w1, [x20, #M_S]
+    mov  x2, #0
+    mov  x3, #240
+    bl   _v_tone
 Lsym_next:
     add  x23, x23, #1
     b    Lsym

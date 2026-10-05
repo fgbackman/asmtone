@@ -9,7 +9,7 @@ Lk_w_d:      .double 0.00013089969389957471   // 2*pi / 48000
 .p2align 2
 Lk_w:        .float 0.00013089969389957471
 Lk_2pi:      .float 6.283185307179586
-Lk_inv96:    .float 0.010416666666666666
+Lk_pi:       .float 3.141592653589793
 Lk_harm:     .float 0.22, 0.10, 0.04          // piano overtones 2, 3, 4
 Lk_peak:     .float 0.7
 
@@ -188,25 +188,31 @@ Lvp_done:
     LEAVE 32
 
 // ---------------------------------------------------------------------------
-// void _v_tone(float *dst, long n, float f0, float f1, long glide, float amp)
+// void _v_tone(float *dst, long n, float f0, float f1, long glide, float amp, long ramp)
 //   Adds a sine that slides from f0 to f1 over the first `glide` samples (a chirp)
-//   and then holds f1, with 2 ms ramps at both ends so symbols don't click.
+//   and then holds f1, faded in and out over `ramp` samples with a raised cosine so
+//   symbols don't click (a long ramp keeps the Silent tones silent).
 // ---------------------------------------------------------------------------
 .globl _v_tone
 _v_tone:
-    ENTER 48
+    ENTER 80
     stp  d8, d9, [sp, #96]
     stp  d10, d11, [sp, #112]
     stp  d12, d13, [sp, #128]
+    stp  d14, d15, [sp, #144]
     mov  x19, x0
     mov  x20, x1
     mov  x21, x2
+    mov  x23, x3
     fmov s8, s0
     fmov s9, s1
     fmov s10, s2
     fmov s11, wzr                     // phase
     LDS  s12, Lk_w
     LDS  s13, Lk_2pi
+    ucvtf s14, x23                    // pi / ramp
+    LDS  s15, Lk_pi
+    fdiv s14, s15, s14
     mov  x22, #0
 Lvt_loop:
     cmp  x22, x20
@@ -227,19 +233,19 @@ Lvt_loop:
 2:  fmov s0, s11
     CALLC sinf
     fmul s0, s0, s10
-    mov  x9, #96
-    cmp  x22, x9
-    b.hs 3f
-    ucvtf s1, x22
-    LDS  s2, Lk_inv96
-    fmul s1, s1, s2
+    sub  x10, x20, x22                // distance to the nearer end
+    cmp  x10, x22
+    csel x10, x10, x22, lo
+    cmp  x10, x23
+    b.hs 4f
+    str  s0, [sp, #160]
+    ucvtf s0, x10
+    fmul s0, s0, s14
+    CALLC cosf
+    fmov s1, #0.5
     fmul s0, s0, s1
-3:  sub  x10, x20, x22
-    cmp  x10, x9
-    b.hi 4f
-    ucvtf s1, x10
-    LDS  s2, Lk_inv96
-    fmul s1, s1, s2
+    fsub s1, s1, s0                   // 0.5 - 0.5 cos
+    ldr  s0, [sp, #160]
     fmul s0, s0, s1
 4:  ldr  s1, [x19, x22, lsl #2]
     fadd s1, s1, s0
@@ -250,7 +256,8 @@ Lvt_done:
     ldp  d8, d9, [sp, #96]
     ldp  d10, d11, [sp, #112]
     ldp  d12, d13, [sp, #128]
-    LEAVE 48
+    ldp  d14, d15, [sp, #144]
+    LEAVE 80
 
 // ---------------------------------------------------------------------------
 // void _normalize(float *x, long n) — scale so the loudest sample is 0.7

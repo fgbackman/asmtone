@@ -76,9 +76,11 @@ Ls_ctl_name:    .asciz "ATController"
 Ls_piano:       .asciz "Piano"
 Ls_chirp:       .asciz "Chirp"
 Ls_fast:        .asciz "Fast"
+Ls_silent:      .asciz "Silent"
 Ls_sp_piano:    .asciz "about 3 characters a second"
 Ls_sp_chirp:    .asciz "about 14 characters a second"
 Ls_sp_fast:     .asciz "about 50 characters a second"
+Ls_sp_silent:   .asciz "about 12 a second, nearly inaudible"
 Ls_placeholder: .asciz "Type a message, then press Return to play it"
 Ls_est_empty:   .asciz "Other Macs running asmtone will write it down."
 Ls_est_fmt:     .asciz "%ld bytes \302\267 %.1f seconds of sound"
@@ -123,6 +125,7 @@ Ls_sym_alt:     .asciz "music.note"
 Ls_mi_piano:    .asciz "Send Clipboard as Piano"
 Ls_mi_chirp:    .asciz "Send Clipboard as Chirp"
 Ls_mi_fast:     .asciz "Send Clipboard as Fast"
+Ls_mi_silent:   .asciz "Send Clipboard as Silent"
 Ls_mi_listen:   .asciz "Listen"
 Ls_mi_copy:     .asciz "Copy Last Message"
 Ls_mi_open:     .asciz "Open asmtone"
@@ -155,6 +158,7 @@ Ls_key_0:       .asciz "0"
 Ls_key_1:       .asciz "1"
 Ls_key_2:       .asciz "2"
 Ls_key_3:       .asciz "3"
+Ls_key_4:       .asciz "4"
 Ls_key_l:       .asciz "l"
 // selectors and classes
 Ls_NSApplication:  .asciz "NSApplication"
@@ -336,8 +340,8 @@ Lmic_block:                               // a global block: ^(BOOL granted) { .
     .quad Lmic_block_desc
 Lmic_block_desc:
     .quad 0, 32
-Lmode_names:  .quad Ls_piano, Ls_chirp, Ls_fast
-Lmode_speeds: .quad Ls_sp_piano, Ls_sp_chirp, Ls_sp_fast
+Lmode_names:  .quad Ls_piano, Ls_chirp, Ls_fast, Ls_silent
+Lmode_speeds: .quad Ls_sp_piano, Ls_sp_chirp, Ls_sp_fast, Ls_sp_silent
 
 _g_app:      .quad 0
 _g_ctl:      .quad 0
@@ -435,7 +439,7 @@ _build_app:
     mov  x2, x0
     mov  x0, x19
     MSG1 Ls_integerForKey
-    cmp  x0, #2
+    cmp  x0, #3
     csel x0, x0, xzr, ls
     PUT  x0, _g_mode
     mov  x2, x0
@@ -810,6 +814,13 @@ _send_items:
     mov  x5, #2
     bl   _menu_item
     mov  x0, x19
+    ADRL x1, Ls_mi_silent
+    ADRL x2, Ls_a_clip
+    ADRL x3, Ls_key_4
+    GET  x4, _g_ctl
+    mov  x5, #3
+    bl   _menu_item
+    mov  x0, x19
     bl   _add_separator
     mov  x0, x19
     ADRL x1, Ls_mi_listen
@@ -873,9 +884,12 @@ _build_window:
     ADRL x0, Ls_fast
     bl   _nsstr
     str  x0, [sp, #112]
+    ADRL x0, Ls_silent
+    bl   _nsstr
+    str  x0, [sp, #120]
     CLS  Ls_NSArray
     add  x2, sp, #96
-    mov  x3, #3
+    mov  x3, #4
     MSG2 Ls_arrayObjs
     mov  x21, x0
     ADRL x0, Ls_a_mode
@@ -1503,7 +1517,7 @@ _m_mode:
     ENTER 0
     GET  x0, _g_seg
     MSG0 Ls_selSeg
-    cmp  x0, #2
+    cmp  x0, #3
     csel x0, x0, xzr, ls
     PUT  x0, _g_mode
     mov  x19, x0
@@ -1557,7 +1571,7 @@ _m_heard:
     MSG0 Ls_bytes
     mov  x21, x0
     ldrb w22, [x21]                       // mode
-    cmp  w22, #2
+    cmp  w22, #3
     b.hi 9f
     ldrb w9, [x21, #2]
     cbz  w9, 1f
@@ -1678,7 +1692,7 @@ _m_tick:
     bl   _rx_progress
     tbz  x0, #63, 3f
     add  x20, x20, #1
-    cmp  x20, #3
+    cmp  x20, #4
     b.lo 2b
     b    4f
 3:  mov  x19, x0
@@ -1808,7 +1822,7 @@ _m_clip:
 2:  mov  x20, x0
     mov  x0, x19
     MSG0 Ls_tag
-    cmp  x0, #2
+    cmp  x0, #3
     csel x21, x0, xzr, ls
     GET  x0, _g_seg
     mov  x2, x21
