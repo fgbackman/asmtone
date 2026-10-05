@@ -8,6 +8,9 @@
 //   body       payload + CRC-16 + Reed–Solomon parity, whitened, high nibble first
 //   (piano only) a closing chord nobody decodes
 //
+// The sink hears every outcome: len >= 0 a message (fixed = bytes repaired), -1 a message
+// too damaged to repair, -2 a preamble whose length couldn't be read.
+//
 //            tones          symbol   window   parity   speed
 //   Piano    16 notes       150 ms   85 ms    8        ~3 characters/s
 //   Chirp    16, 4-6.8 kHz   36 ms   21 ms    12       ~14 characters/s
@@ -476,8 +479,19 @@ Lh_check:
     bl   _rx_finish
     str  wzr, [x21, #R_STATE]
     b    Lh_done
-Lh_nohdr:                             // a preamble with no sensible header: back to hunting
+Lh_nohdr:                             // a preamble with no sensible header: say so, hunt again
     str  wzr, [x21, #R_STATE]
+    ldr  x11, [x21, #(R_STATS + 24)]
+    add  x11, x11, #1
+    str  x11, [x21, #(R_STATS + 24)]
+    ADRL x9, _rx_sink
+    ldr  x9, [x9]
+    cbz  x9, Lh_done
+    mov  x0, x19
+    add  x1, x21, #R_NIBS
+    mov  x2, #-2
+    mov  x3, #0
+    blr  x9
 Lh_done:
     LEAVE 32
 

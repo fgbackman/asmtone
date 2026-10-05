@@ -102,6 +102,16 @@ Ls_time:        .asciz "%H:%M:%S"
 Ls_pre_sent:    .asciz "%s  %-5s \342\226\270  "
 Ls_pre_heard:   .asciz "%s  %-5s \342\227\202  "
 Ls_bad_text:    .asciz "a message arrived too damaged to read"
+Ls_nohdr_text:  .asciz "heard the start of a message but couldn't read its length"
+Ls_mi_rec:      .asciz "Save Last 30 Seconds of Sound"
+Ls_a_rec:       .asciz "saveRecording:"
+Ls_key_s:       .asciz "s"
+Ls_rec_dir1:    .asciz "%s/Developer/asmtone/recordings"
+Ls_rec_dir2:    .asciz "%s/Desktop"
+Ls_rec_time:    .asciz "%Y%m%d-%H%M%S"
+Ls_rec_path:    .asciz "%s/heard-%s.wav"
+Ls_rec_ok:      .asciz "Saved the last 30 seconds: %s"
+Ls_rec_fail:    .asciz "Couldn't save the recording (is Listen on?)"
 Ls_fixed_fmt:   .asciz "   (%ld bytes repaired)"
 Ls_nl:          .asciz "\n"
 Ls_badge:       .asciz "%ld"
@@ -316,6 +326,7 @@ Lmethods:
     .quad Ls_a_active,  _m_active,  Ls_t_v
     .quad Ls_a_dock,    _m_dock,    Ls_t_at
     .quad Ls_a_start,   _m_start,   Ls_t_v
+    .quad Ls_a_rec,     _m_recsave, Ls_t_v
     .quad 0
 Lmic_block:                               // a global block: ^(BOOL granted) { ... }
     .quad __NSConcreteGlobalBlock
@@ -363,6 +374,8 @@ _g_a_bad:    .quad 0
 _g_buf:      .space 512
 _g_tbuf:     .space 64
 _g_tm:       .space 64
+_g_dir:      .space 512
+_g_path:     .space 768
 
 .text
 .p2align 2
@@ -612,6 +625,13 @@ _build_menus:
     ADRL x2, Ls_a_about
     ADRL x3, Ls_key_none
     mov  x4, #0
+    mov  x5, #0
+    bl   _menu_item
+    mov  x0, x20
+    ADRL x1, Ls_mi_rec
+    ADRL x2, Ls_a_rec
+    ADRL x3, Ls_key_s
+    GET  x4, _g_ctl
     mov  x5, #0
     bl   _menu_item
     mov  x0, x20
@@ -1099,6 +1119,13 @@ _build_status_item:
     mov  x5, #0
     bl   _menu_item
     mov  x0, x19
+    ADRL x1, Ls_mi_rec
+    ADRL x2, Ls_a_rec
+    ADRL x3, Ls_key_none
+    GET  x4, _g_ctl
+    mov  x5, #0
+    bl   _menu_item
+    mov  x0, x19
     bl   _add_separator
     mov  x0, x19
     ADRL x1, Ls_mi_open
@@ -1534,16 +1561,19 @@ _m_heard:
     b.hi 9f
     ldrb w9, [x21, #2]
     cbz  w9, 1f
-    GET  x9, _g_n_lost                    // too damaged
-    add  x9, x9, #1
-    PUT  x9, _g_n_lost
-    ADRL x2, Ls_bad_text
-    mov  x0, x2
+    GET  x10, _g_n_lost                   // too damaged, or the length unreadable
+    add  x10, x10, #1
+    PUT  x10, _g_n_lost
+    ADRL x23, Ls_bad_text
+    cmp  w9, #2
+    b.ne 0f
+    ADRL x23, Ls_nohdr_text
+0:  mov  x0, x23
     bl   _strlen
     mov  x3, x0
     mov  x0, #K_BAD
     mov  x1, x22
-    ADRL x2, Ls_bad_text
+    mov  x2, x23
     mov  x4, #0
     bl   _log_line
     b    8f
@@ -1808,3 +1838,62 @@ _m_dock:
     ADRL x9, _g_dock
     ldr  x0, [x9]
     ret
+
+// saveRecording: — the last 30 s the microphone heard, as a WAV
+//   into ~/Developer/asmtone/recordings when that folder can be made, else the Desktop
+_m_recsave:
+    ENTER 32
+    bl   _NSHomeDirectory
+    MSG0 Ls_UTF8String
+    mov  x19, x0
+    str  x19, [sp]
+    ADRL x0, _g_dir
+    mov  x1, #512
+    ADRL x2, Ls_rec_dir1
+    bl   _snprintf
+    ADRL x0, _g_dir
+    mov  w1, #0x1ED                       // 0755
+    bl   _mkdir
+    ADRL x0, _g_dir
+    mov  w1, #2                           // W_OK
+    bl   _access
+    cbz  w0, 1f
+    str  x19, [sp]
+    ADRL x0, _g_dir
+    mov  x1, #512
+    ADRL x2, Ls_rec_dir2
+    bl   _snprintf
+1:  add  x0, sp, #96
+    bl   _time
+    add  x0, sp, #96
+    ADRL x1, _g_tm
+    bl   _localtime_r
+    ADRL x0, _g_tbuf
+    mov  x1, #64
+    ADRL x2, Ls_rec_time
+    ADRL x3, _g_tm
+    bl   _strftime
+    ADRL x9, _g_dir
+    str  x9, [sp]
+    ADRL x9, _g_tbuf
+    str  x9, [sp, #8]
+    ADRL x0, _g_path
+    mov  x1, #768
+    ADRL x2, Ls_rec_path
+    bl   _snprintf
+    ADRL x0, _g_path
+    bl   _rec_save
+    cbnz x0, 2f
+    ADRL x9, _g_path
+    str  x9, [sp]
+    ADRL x0, _g_buf
+    mov  x1, #512
+    ADRL x2, Ls_rec_ok
+    bl   _snprintf
+    ADRL x0, _g_buf
+    bl   _notice
+    LEAVE 32
+2:  ADRL x0, Ls_rec_fail
+    bl   _notice
+    bl   _NSBeep
+    LEAVE 32

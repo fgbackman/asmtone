@@ -3,6 +3,7 @@
 #   make           build asmtone.app (signed with your Apple Development identity if found, else ad-hoc)
 #   make selftest  build and run the modem self-tests (no window, no sound card)
 #   make install   selftest, then install to /Applications, pin to the Dock and launch
+#   make dist      selftest, then dist/asmtone-<version>-mac-arm64.zip (the app + INSTALL.txt)
 #   make icon      redraw the icon (needs Pillow)
 #   make clean
 
@@ -46,10 +47,27 @@ selftest: asmtone
 install: selftest
 	sh install.sh
 
+VERSION := $(shell /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist 2>/dev/null)
+DISTDIR := $(or $(TMPDIR),/tmp)/asmtone-dist
+ZIP     := dist/asmtone-$(VERSION)-mac-arm64.zip
+
+dist: selftest
+	rm -rf "$(DISTDIR)"
+	mkdir -p "$(DISTDIR)/asmtone" dist
+	$(MAKE) APP="$(DISTDIR)/asmtone/asmtone.app"
+	codesign --verify --strict "$(DISTDIR)/asmtone/asmtone.app"
+	cp INSTALL.txt "$(DISTDIR)/asmtone/INSTALL.txt"
+	rm -f "$(ZIP)"
+	cd "$(DISTDIR)" && ditto -c -k --keepParent asmtone asmtone.zip
+	mv "$(DISTDIR)/asmtone.zip" "$(ZIP)"
+	cp INSTALL.txt dist/INSTALL.txt
+	shasum -a 256 "$(ZIP)" | tee "$(ZIP).sha256"
+	@echo "made $(ZIP)"
+
 icon:
 	python3 icon/make_icon.py
 
 clean:
 	rm -rf $(OBJS) asmtone $(APP)
 
-.PHONY: all selftest install icon clean
+.PHONY: all selftest install dist icon clean

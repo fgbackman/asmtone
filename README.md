@@ -63,6 +63,13 @@ One message carries up to 245 bytes in Piano, 241 in Chirp, 237 in Fast.
 | `test/run_linux.sh` | the modem + self-tests built natively on ARM64 Linux |
 | `icon/make_icon.py` | draws the icon |
 
+## Download
+
+Double-click **Make Download.command** (or `make dist`): it runs the self-tests and writes
+`dist/asmtone-<version>-mac-arm64.zip` — asmtone.app plus INSTALL.txt — and its SHA-256. Install steps
+for other Macs are in `INSTALL.txt` (Apple Silicon, macOS 12+; first launch needs Open Anyway, since the
+app isn't notarized).
+
 ## Building
 
 Double-click **Install asmtone.command** — it runs the self-tests, builds, signs (Apple Development

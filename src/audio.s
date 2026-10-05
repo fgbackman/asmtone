@@ -6,6 +6,7 @@
 .include "macros.inc"
 
 .set OUT_FRAMES, 4096
+.set REC_N,      1440000             // the last 30 s of microphone sound, for Save Last 30 Seconds
 .set IN_FRAMES,  2048
 // AudioQueueBuffer
 .set AB_DATA,    8
@@ -26,6 +27,7 @@ Ls_alloc:   .asciz "alloc"
 Ls_initB:   .asciz "initWithBytes:length:"
 Ls_release: .asciz "release"
 Ls_perform: .asciz "performSelectorOnMainThread:withObject:waitUntilDone:"
+Ls_wb:      .asciz "wb"
 
 .data
 .p2align 3
@@ -41,6 +43,18 @@ _tx_active: .quad 0
 .globl _audio_ctl
 _audio_ctl: .quad 0                  // who hears about it (the controller)
 _sinkbuf:   .space 272
+_rec_buf:   .quad 0
+_rec_i:     .quad 0                  // where the next sample goes
+_rec_tot:   .quad 0                  // samples ever recorded
+Lwav_hdr:   .ascii "RIFF"
+            .word 0
+            .ascii "WAVEfmt "
+            .word 16
+            .short 1, 1
+            .word 48000, 96000
+            .short 2, 16
+            .ascii "data"
+            .word 0
 
 .text
 .p2align 2
@@ -69,6 +83,12 @@ _audio_init:
     add  x19, x19, #1
     cmp  x19, #3
     b.lo 1b
+    mov  x0, #(REC_N & 0xffff)
+    movk x0, #(REC_N >> 16), lsl #16
+    mov  x1, #4
+    bl   _calloc
+    ADRL x9, _rec_buf
+    str  x0, [x9]
     ADRL x9, _rx_sink                // the receiver reports to us
     ADRL x10, _app_sink
     str  x10, [x9]
@@ -297,6 +317,10 @@ _in_cb:
     ldr  x0, [x20, #AB_DATA]
     ldr  w1, [x20, #AB_SIZE]
     lsr  x1, x1, #2
+    bl   _rec_push
+    ldr  x0, [x20, #AB_DATA]
+    ldr  w1, [x20, #AB_SIZE]
+    lsr  x1, x1, #2
     bl   _rx_feed
     ADRL x9, _aq_in
     ldr  x9, [x9]
@@ -321,10 +345,16 @@ _app_sink:
     ADRL x24, _sinkbuf
     strb w19, [x24]
     strb w22, [x24, #1]
-    cmp  x21, #0
-    cset w9, lt
-    strb w9, [x24, #2]
+    mov  w9, #0                       // 0 a message, 1 too damaged, 2 length unreadable
+    cmp  x21, #-1
+    b.ne 1f
+    mov  w9, #1
+1:  cmp  x21, #-2
+    b.ne 2f
+    mov  w9, #2
+2:  strb w9, [x24, #2]
     strb wzr, [x24, #3]
+    cmp  x21, #0
     csel x21, xzr, x21, lt
     add  x0, x24, #4
     mov  x1, x20
@@ -350,3 +380,103 @@ _app_sink:
     mov  x0, x23
     bl   _objc_autoreleasePoolPop
     LEAVE 16
+
+// _rec_push(const float *x, long n) — into the 30-second ring. Leaf.
+_rec_push:
+    ADRL x9, _rec_buf
+    ldr  x10, [x9]
+    cbz  x10, 9f
+    ADRL x11, _rec_i
+    ldr  x12, [x11]
+    mov  x13, #(REC_N & 0xffff)
+    movk x13, #(REC_N >> 16), lsl #16
+    ADRL x14, _rec_tot
+    ldr  x15, [x14]
+    add  x15, x15, x1
+    str  x15, [x14]
+1:  cbz  x1, 2f
+    ldr  w15, [x0], #4
+    str  w15, [x10, x12, lsl #2]
+    add  x12, x12, #1
+    cmp  x12, x13
+    csel x12, xzr, x12, hs
+    sub  x1, x1, #1
+    b    1b
+2:  str  x12, [x11]
+9:  ret
+
+// long _rec_save(const char *path) — the last 30 s (or less) as a 16-bit 48 kHz WAV; 0 = saved
+.globl _rec_save
+_rec_save:
+    ENTER 32
+    mov  x19, x0
+    ADRL x9, _rec_buf
+    ldr  x20, [x9]
+    cbz  x20, 8f
+    mov  x13, #(REC_N & 0xffff)
+    movk x13, #(REC_N >> 16), lsl #16
+    ADRL x9, _rec_tot
+    ldr  x21, [x9]
+    cmp  x21, x13
+    csel x21, x21, x13, lo            // samples to write
+    cbz  x21, 8f
+    ADRL x9, _rec_i                   // the oldest of them
+    ldr  x22, [x9]
+    sub  x22, x22, x21
+    add  x9, x22, x13
+    cmp  x22, #0
+    csel x22, x9, x22, lt
+    lsl  x0, x21, #1
+    bl   _malloc
+    cbz  x0, 8f
+    mov  x23, x0
+    mov  x9, #0                       // float -> saturated 16-bit
+    mov  x13, #(REC_N & 0xffff)
+    movk x13, #(REC_N >> 16), lsl #16
+    mov  w10, #0xFE00                 // 32767.0f = 0x46FFFE00
+    movk w10, #0x46FF, lsl #16
+    fmov s1, w10
+1:  ldr  s0, [x20, x22, lsl #2]
+    fmul s0, s0, s1
+    fcvtzs s0, s0
+    sqxtn h0, s0
+    str  h0, [x23, x9, lsl #1]
+    add  x22, x22, #1
+    cmp  x22, x13
+    csel x22, xzr, x22, hs
+    add  x9, x9, #1
+    cmp  x9, x21
+    b.lo 1b
+    mov  x0, x19
+    ADRL x1, Ls_wb
+    bl   _fopen
+    cbz  x0, 7f
+    mov  x24, x0
+    ADRL x9, Lwav_hdr
+    lsl  x10, x21, #1
+    str  w10, [x9, #40]
+    add  x10, x10, #36
+    str  w10, [x9, #4]
+    mov  x0, x9
+    mov  x1, #1
+    mov  x2, #44
+    mov  x3, x24
+    bl   _fwrite
+    mov  x0, x23
+    mov  x1, #2
+    mov  x2, x21
+    mov  x3, x24
+    bl   _fwrite
+    mov  x22, x0
+    mov  x0, x24
+    bl   _fclose
+    mov  x0, x23
+    bl   _free
+    cmp  x22, x21
+    b.ne 8f
+    mov  x0, #0
+    LEAVE 32
+7:  mov  x0, x23
+    bl   _free
+8:  mov  x0, #-1
+    LEAVE 32
