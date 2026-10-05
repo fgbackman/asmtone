@@ -1,0 +1,7 @@
+*.o
+/asmtone
+/asmtone.app
+install.log
+crash.log
+.DS_Store
+.sync-*.tgz
