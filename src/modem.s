@@ -1,9 +1,9 @@
-// modem.s — asmtone's sound modem: three voices, one receiver that listens for all of them.
+// modem.s — asmtone's sound modem: four voices, one receiver that listens for all of them.
 //
 // A message on the air (each symbol is one note, or four tones at once in Fast):
 //
 //   100 ms silence
-//   preamble   8 symbols rising: tone 0 2 4 5 7 9 10 12 (on the piano: G4 C5 E5 G5 C6 E6 G6 C7)
+//   preamble   8 symbols rising: tone 0 2 4 5 7 9 10 12 (on the piano: D4 G4 C5 D5 G5 C6 D6 G6)
 //   header     the payload length L, three times (6 nibbles), decided by majority
 //   body       payload + CRC-16 + Reed–Solomon parity, whitened, high nibble first
 //   (piano only) a closing chord nobody decodes
@@ -11,15 +11,24 @@
 // The sink hears every outcome: len >= 0 a message (fixed = bytes repaired), -1 a message
 // too damaged to repair, -2 a preamble whose length couldn't be read.
 //
-//            tones          symbol   window   parity   speed
-//   Piano    16 notes       150 ms   85 ms    8        ~3 characters/s
-//   Chirp    16, 4-6.8 kHz   36 ms   21 ms    12       ~14 characters/s
-//   Fast     4 x 16 at once  40 ms   21 ms    16       ~50 characters/s
-//   Silent   16, 18-19.4 kHz 40 ms   21 ms    12       ~12 characters/s, above most adults' hearing
+//            tones            symbol   window   parity   a tone rests   speed
+//   Piano    22 notes         150 ms   85 ms    12       6 symbols      ~3 characters/s
+//   Chirp    24, 4-8.3 kHz     36 ms   21 ms    16       8              ~14 characters/s
+//   Fast     4 x 22 at once    40 ms   21 ms    20       6              ~50 characters/s
+//   Silent   22, 17.6-19.6 kHz 40 ms   21 ms    16       6              ~12 characters/s
 //
-// Piano notes are judged with their 2nd and 3rd harmonics added in (tones 16-47 of the bank):
-// small speakers and room echoes can bury a note's fundamental, and the octave or fifth above
-// it is another note of the scale.
+// (A wrong tone also upsets the next few symbols, whose ranks are counted around it, so
+// every mode carries more parity than a clean channel would need.)
+//
+// Rooms echo. A few feet away most of what a microphone hears is the room still ringing with
+// the last few tones, so a tone isn't played again until it has rested for M_KEX symbols, and
+// the receiver ignores those tones when it picks the next one: each symbol's nibble is the
+// rank of its tone among the tones allowed at that moment (both ends keep the same history,
+// starting from the preamble).
+//
+// Piano notes are judged with their 2nd and 3rd harmonics added in (half weight): small
+// speakers and echoes can bury a note's fundamental, and the octave or fifth above it is
+// another note of the scale.
 //
 // The receiver runs a Goertzel bank for every mode every 1/8 symbol, keeps which tone
 // won and how clearly, and watches for the preamble. Once it sees one it settles on
@@ -31,63 +40,71 @@ RODATA
 .p2align 4
 .globl _modes
 _modes:
-// ---- Piano: G major pentatonic, G4 .. G7 ----
-    .word 48, 1, 7200, 4096, 900, 8, 8, 1
+// ---- Piano: G major pentatonic, D4 .. E8 (22 notes; a note waits 6 notes before it plays again) ----
+    .word 80, 1, 7200, 4096, 900, 8, 12, 1
     .float 0.30
     .word 0
     .float 0.30
     .word 14400
-    .word 3
-    .space 12
-    .float 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900, 880.0000, 1046.5000
-    .float 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200, 2637.0200, 3135.9600
+    .word 3, 22, 6, 0
+    .float 293.6600, 329.6300, 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900
+    .float 880.0000, 1046.5000, 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200
+    .float 2637.0200, 3135.9600, 3520.0000, 4186.0100, 4698.6300, 5274.0400, 587.3200, 659.2600
     .float 784.0000, 880.0000, 1046.5000, 1174.6600, 1318.5200, 1567.9800, 1760.0000, 2093.0000
     .float 2349.3200, 2637.0200, 3135.9600, 3520.0000, 4186.0000, 4698.6400, 5274.0400, 6271.9200
-    .float 1176.0000, 1320.0000, 1569.7500, 1761.9900, 1977.7800, 2351.9700, 2640.0000, 3139.5000
-    .float 3523.9800, 3955.5300, 4703.9400, 5280.0000, 6279.0000, 7047.9600, 7911.0600, 9407.8800
-    .space 256
-// ---- Chirp: 16 tones on the 1024-point grid, 4.0 - 6.8 kHz, each sliding up into place ----
-    .word 16, 1, 1728, 1024, 216, 8, 12, 0
+    .float 7040.0000, 8372.0200, 9397.2600, 10548.0800, 880.9800, 988.8900, 1176.0000, 1320.0000
+    .float 1569.7500, 1761.9900, 1977.7800, 2351.9700, 2640.0000, 3139.5000, 3523.9800, 3955.5300
+    .float 4703.9400, 5280.0000, 6279.0000, 7047.9600, 7911.0600, 9407.8800, 10560.0000, 12558.0300
+    .float 14095.8900, 15822.1200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .space 128
+// ---- Chirp: 24 tones on the 1024-point grid, 4.0 - 8.3 kHz, each sliding up into place ----
+    .word 32, 1, 1728, 1024, 216, 8, 16, 0
     .float 0.45
     .word 1
     .float 0.50
     .word 4800
-    .word 1
-    .space 12
+    .word 1, 24, 8, 0
     .float 4031.2500, 4218.7500, 4406.2500, 4593.7500, 4781.2500, 4968.7500, 5156.2500, 5343.7500
     .float 5531.2500, 5718.7500, 5906.2500, 6093.7500, 6281.2500, 6468.7500, 6656.2500, 6843.7500
-    .space 384
-// ---- Fast: four groups of 16, interleaved on the grid (bin 32 + 4v + g), 1.5 - 4.45 kHz ----
-    .word 64, 4, 1920, 1024, 240, 8, 16, 0
+    .float 7031.2500, 7218.7500, 7406.2500, 7593.7500, 7781.2500, 7968.7500, 8156.2500, 8343.7500
+    .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .space 320
+// ---- Fast: four groups of 22, interleaved on the grid (bin 32 + 4v + g), 1.5 - 5.6 kHz ----
+    .word 96, 4, 1920, 1024, 240, 8, 20, 0
     .float 0.35
     .word 2
     .float 0.22
     .word 4800
-    .word 1
-    .space 12
+    .word 1, 22, 6, 0
     .float 1500.0000, 1687.5000, 1875.0000, 2062.5000, 2250.0000, 2437.5000, 2625.0000, 2812.5000
     .float 3000.0000, 3187.5000, 3375.0000, 3562.5000, 3750.0000, 3937.5000, 4125.0000, 4312.5000
-    .float 1546.8750, 1734.3750, 1921.8750, 2109.3750, 2296.8750, 2484.3750, 2671.8750, 2859.3750
-    .float 3046.8750, 3234.3750, 3421.8750, 3609.3750, 3796.8750, 3984.3750, 4171.8750, 4359.3750
-    .float 1593.7500, 1781.2500, 1968.7500, 2156.2500, 2343.7500, 2531.2500, 2718.7500, 2906.2500
-    .float 3093.7500, 3281.2500, 3468.7500, 3656.2500, 3843.7500, 4031.2500, 4218.7500, 4406.2500
-    .float 1640.6250, 1828.1250, 2015.6250, 2203.1250, 2390.6250, 2578.1250, 2765.6250, 2953.1250
-    .float 3140.6250, 3328.1250, 3515.6250, 3703.1250, 3890.6250, 4078.1250, 4265.6250, 4453.1250
-    .space 192
-// ---- Silent: 16 tones on the grid, 18.0 - 19.4 kHz, faded in and out over 5 ms ----
-    .word 16, 1, 1920, 1024, 240, 8, 12, 0
+    .float 4500.0000, 4687.5000, 4875.0000, 5062.5000, 5250.0000, 5437.5000, 1546.8750, 1734.3750
+    .float 1921.8750, 2109.3750, 2296.8750, 2484.3750, 2671.8750, 2859.3750, 3046.8750, 3234.3750
+    .float 3421.8750, 3609.3750, 3796.8750, 3984.3750, 4171.8750, 4359.3750, 4546.8750, 4734.3750
+    .float 4921.8750, 5109.3750, 5296.8750, 5484.3750, 1593.7500, 1781.2500, 1968.7500, 2156.2500
+    .float 2343.7500, 2531.2500, 2718.7500, 2906.2500, 3093.7500, 3281.2500, 3468.7500, 3656.2500
+    .float 3843.7500, 4031.2500, 4218.7500, 4406.2500, 4593.7500, 4781.2500, 4968.7500, 5156.2500
+    .float 5343.7500, 5531.2500, 1640.6250, 1828.1250, 2015.6250, 2203.1250, 2390.6250, 2578.1250
+    .float 2765.6250, 2953.1250, 3140.6250, 3328.1250, 3515.6250, 3703.1250, 3890.6250, 4078.1250
+    .float 4265.6250, 4453.1250, 4640.6250, 4828.1250, 5015.6250, 5203.1250, 5390.6250, 5578.1250
+    .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .space 64
+// ---- Silent: 22 tones on the grid, 17.6 - 19.6 kHz, faded in and out over 5 ms ----
+    .word 32, 1, 1920, 1024, 240, 8, 16, 0
     .float 0.40
     .word 3
     .float 0.50
     .word 4800
-    .word 1
-    .space 12
-    .float 18000.0000, 18093.7500, 18187.5000, 18281.2500, 18375.0000, 18468.7500, 18562.5000, 18656.2500
-    .float 18750.0000, 18843.7500, 18937.5000, 19031.2500, 19125.0000, 19218.7500, 19312.5000, 19406.2500
-    .space 384
+    .word 1, 22, 6, 0
+    .float 17625.0000, 17718.7500, 17812.5000, 17906.2500, 18000.0000, 18093.7500, 18187.5000, 18281.2500
+    .float 18375.0000, 18468.7500, 18562.5000, 18656.2500, 18750.0000, 18843.7500, 18937.5000, 19031.2500
+    .float 19125.0000, 19218.7500, 19312.5000, 19406.2500, 19500.0000, 19593.7500, 0.0000, 0.0000
+    .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .space 320
 
 _pre:       .byte 0, 2, 4, 5, 7, 9, 10, 12
-_chord:     .byte 2, 4, 5, 7               // C5 E5 G5 C6
+_chord:     .byte 4, 6, 7, 9               // C5 E5 G5 C6
 
 .p2align 2
 Lk_w:       .float 0.00013089969389957471  // 2*pi / 48000
@@ -337,19 +354,20 @@ _rx_hop:
     cmp  w9, #3
     b.ne Lh_nofold
     add  x10, x21, #R_ENER
+    ldr  w13, [x20, #M_NV]
     mov  x11, #0
 Lh_fold:
     ldr  s0, [x10, x11, lsl #2]
-    add  x12, x11, #16
+    add  x12, x11, x13
     ldr  s1, [x10, x12, lsl #2]
-    add  x12, x11, #32
+    add  x12, x12, x13
     ldr  s2, [x10, x12, lsl #2]
     fadd s1, s1, s2
     fmov s3, #0.5
     fmadd s0, s1, s3, s0              // note + (octave + fifth above) / 2
     str  s0, [x10, x11, lsl #2]
     add  x11, x11, #1
-    cmp  x11, #16
+    cmp  x11, x13
     b.lo Lh_fold
 Lh_nofold:
 
@@ -359,16 +377,38 @@ Lh_nofold:
     add  x23, x23, x9, lsl #2         // this hop's best tone per group
     ldr  w24, [x20, #M_NG]
     add  x10, x21, #R_ENER
+    ldr  w15, [x20, #M_NV]
     mov  x11, #0
     fmov s6, wzr
     LDS  s3, Lk_tiny
 Lh_g:
-    add  x12, x10, x11, lsl #6
+    mov  x17, #0                      // tones still echoing: the winners of the last KEX
+    ldr  w6, [x20, #M_K]              // symbols at this same alignment are left out
+    ldr  w7, [x20, #M_KEX]
+    mov  x8, x6
+1:  cbz  x7, 3f
+    cmp  x22, x8
+    b.lo 3f
+    sub  x9, x22, x8
+    and  x9, x9, #(HIST - 1)
+    add  x9, x21, x9, lsl #2
+    add  x9, x9, #R_HBEST
+    ldrb w9, [x9, x11]
+    mov  x16, #1
+    lsl  x16, x16, x9
+    orr  x17, x17, x16
+    add  x8, x8, x6
+    sub  x7, x7, #1
+    b    1b
+3:  mul  x12, x11, x15                // group g's tones start at g * NV
+    add  x12, x10, x12, lsl #2
     fmov s1, wzr
     fmov s2, wzr
     mov  x13, #0
     mov  x14, #0
 Lh_t:
+    lsr  x9, x17, x13
+    tbnz x9, #0, 2f
     ldr  s0, [x12, x13, lsl #2]
     fadd s2, s2, s0
     fcmp s0, s1
@@ -376,12 +416,16 @@ Lh_t:
     fmov s1, s0
     mov  x14, x13
 2:  add  x13, x13, #1
-    cmp  x13, #16
+    cmp  x13, x15
     b.lo Lh_t
-    strb w14, [x23, x11]
     fadd s2, s2, s3
     fdiv s1, s1, s2                   // the winner's share of the group's energy
     fadd s6, s6, s1
+    fmov s4, #0.25                    // barely a winner (silence, hiss): not a tone at all,
+    fcmp s1, s4                       // so it mustn't be left out of the next symbols
+    mov  x9, #255
+    csel x14, x9, x14, lt
+    strb w14, [x23, x11]
     add  x11, x11, #1
     cmp  x11, x24
     b.lo Lh_g
@@ -459,6 +503,12 @@ Lh_align:                             // score one symbol's worth of alignments
     str  wzr, [x21, #R_NEED]
     str  wzr, [x21, #R_QSUM]
     str  wzr, [x21, #R_LOWQ]
+    ADRL x9, _pre                     // both ends start the tone history with the preamble
+    ldr  x10, [x9]
+    str  x10, [x21, #R_THIST]
+    str  x10, [x21, #(R_THIST + 8)]
+    str  x10, [x21, #(R_THIST + 16)]
+    str  x10, [x21, #(R_THIST + 24)]
     b    Lh_done
 
 Lh_recv:
@@ -471,18 +521,11 @@ Lh_recv:
     ldr  s1, [x21, #R_QSUM]
     fadd s1, s1, s6
     str  s1, [x21, #R_QSUM]
+    mov  x0, x21                      // each group's tone, skipping those still echoing
+    mov  x1, x20
+    bl   _rx_symbol
     ldr  w12, [x21, #R_NIB]
     add  x13, x21, #R_NIBS
-    mov  x14, #0
-7:  ldrb w15, [x23, x14]
-    cmp  w12, #540
-    b.hs 8f
-    strb w15, [x13, x12]
-    add  w12, w12, #1
-8:  add  x14, x14, #1
-    cmp  x14, x24
-    b.lo 7b
-    str  w12, [x21, #R_NIB]
     ldr  w9, [x21, #R_LOWQ]           // the sender has stopped (or we lost it): don't wait
     LDS  s1, Lk_lowq                  // for the rest of a message that isn't coming
     fcmp s6, s1
@@ -559,6 +602,125 @@ Lh_nohdr:                             // a preamble with no sensible header: say
     blr  x9
 Lh_done:
     LEAVE 32
+
+// _rx_symbol(rx *x0, mode *x1) — read one data symbol from this hop's energies: in each
+// group the loudest tone that hasn't played in the last KEX symbols (the room is still
+// ringing with those), its rank among the allowed tones is the nibble. Leaf.
+_rx_symbol:
+    ldr  w2, [x1, #M_NG]
+    ldr  w3, [x1, #M_NV]
+    ldr  w4, [x1, #M_KEX]
+    mov  x16, #8
+    sub  x16, x16, x4                 // the excluded tones are hist[8-KEX .. 7]
+    add  x5, x0, #R_ENER
+    ldr  w6, [x0, #R_NIB]
+    mov  x7, #0
+Lrs_g:
+    add  x8, x0, #R_THIST
+    add  x8, x8, x7, lsl #3
+    mul  x9, x7, x3
+    add  x9, x5, x9, lsl #2
+    mov  x10, #-1                     // best tone so far
+    mov  x11, #0
+Lrs_v:
+    mov  x12, x16
+1:  cmp  x12, #8
+    b.hs 2f
+    ldrb w13, [x8, x12]
+    cmp  w13, w11
+    b.eq Lrs_vnext                    // still echoing
+    add  x12, x12, #1
+    b    1b
+2:  ldr  s0, [x9, x11, lsl #2]
+    tbnz x10, #63, 3f
+    fcmp s0, s1
+    b.le Lrs_vnext
+3:  fmov s1, s0
+    mov  x10, x11
+Lrs_vnext:
+    add  x11, x11, #1
+    cmp  x11, x3
+    b.lo Lrs_v
+    mov  x14, #0                      // rank among the allowed tones
+    mov  x11, #0
+Lrs_r:
+    cmp  x11, x10
+    b.hs Lrs_rdone
+    mov  x12, x16
+4:  cmp  x12, #8
+    b.hs 5f
+    ldrb w13, [x8, x12]
+    cmp  w13, w11
+    b.eq 6f
+    add  x12, x12, #1
+    b    4b
+5:  add  x14, x14, #1
+6:  add  x11, x11, #1
+    b    Lrs_r
+Lrs_rdone:
+    and  x14, x14, #15
+    ldr  x15, [x8]                    // remember the tone (newest in the top byte)
+    lsr  x15, x15, #8
+    orr  x15, x15, x10, lsl #56
+    str  x15, [x8]
+    add  x15, x0, #R_NIBS
+    cmp  w6, #540
+    b.hs 7f
+    strb w14, [x15, x6]
+    add  w6, w6, #1
+7:  add  x7, x7, #1
+    cmp  x7, x2
+    b.lo Lrs_g
+    str  w6, [x0, #R_NIB]
+    ret
+
+// _tx_tones(mode *x0, uint8 *nibs x1, long count x2) — turn the nibbles after the preamble
+// into tones the same way: nibble d is the d-th tone not played in the last KEX symbols
+// of its group. Leaf.
+_tx_tones:
+    sub  sp, sp, #32
+    ldr  w3, [x0, #M_NG]
+    ldr  w4, [x0, #M_KEX]
+    mov  x16, #8
+    sub  x16, x16, x4
+    ADRL x9, _pre
+    ldr  x10, [x9]
+    stp  x10, x10, [sp]
+    stp  x10, x10, [sp, #16]
+    mov  x5, #NPRE
+    mul  x5, x5, x3                   // first nibble after the preamble
+Ltt_i:
+    cmp  x5, x2
+    b.hs Ltt_done
+    udiv x6, x5, x3
+    msub x6, x6, x3, x5               // group
+    add  x8, sp, x6, lsl #3
+    ldrb w7, [x1, x5]                 // d
+    mov  x11, #0                      // candidate tone
+Ltt_v:
+    mov  x12, x16
+1:  cmp  x12, #8
+    b.hs 2f
+    ldrb w13, [x8, x12]
+    cmp  w13, w11
+    b.eq 3f
+    add  x12, x12, #1
+    b    1b
+2:  cbz  x7, Ltt_found                // the d-th allowed tone
+    sub  x7, x7, #1
+3:  add  x11, x11, #1
+    b    Ltt_v
+Ltt_found:
+    strb w11, [x1, x5]
+    ldr  x15, [x8]
+    lsr  x15, x15, #8
+    orr  x15, x15, x11, lsl #56
+    str  x15, [x8]
+    add  x5, x5, #1
+    b    Ltt_i
+Ltt_done:
+    add  sp, sp, #32
+    ret
 
 // float _pre_score(rx *x0, mode *x1, long h x2) — if at least 7 of the 8 symbols ending at
 // hop h are the preamble's (in every group, clearly enough), their summed quality; else -1. Leaf.
@@ -806,7 +968,14 @@ _tx_render:
     strb wzr, [x22, x10]
     add  x10, x10, #1
     b    5b
-6:  udiv x13, x10, x11
+6:  str  x10, [sp, #120]
+    mov  x0, x20                      // nibbles -> tones (resting the echoing ones)
+    mov  x1, x22
+    mov  x2, x10
+    bl   _tx_tones
+    ldr  x10, [sp, #120]
+    ldr  w11, [x20, #M_NG]
+    udiv x13, x10, x11
     str  x13, [sp, #104]
     ldr  w14, [x20, #M_S]
     mul  x15, x13, x14
@@ -886,7 +1055,8 @@ Lvf_g:
     lsl  x9, x23, #2
     add  x9, x9, x21
     ldrb w9, [x22, x9]
-    add  x9, x9, x21, lsl #4
+    ldr  w10, [x20, #M_NV]
+    madd x9, x21, x10, x9             // group g's tones start at g * NV
     add  x10, x20, #M_FREQ
     ldr  s0, [x10, x9, lsl #2]
     fmov s1, s0

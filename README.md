@@ -8,13 +8,13 @@ A Cocoa app with a Dock icon and a menu-bar item, written in ARM64 assembly for 
 
 | Mode  | Sounds like                                  | Speed                 | Repairs            |
 |-------|----------------------------------------------|-----------------------|--------------------|
-| Piano | notes of the G pentatonic scale, G4–G7; a rising arpeggio first, a C-major chord last | ~3 characters/s | 4 bad bytes / message |
-| Chirp | short bird-like slides, 4–6.8 kHz            | ~14 characters/s      | 6 bad bytes        |
-| Fast  | four tones at once, 1.5–4.5 kHz              | ~50 characters/s      | 8 bad bytes        |
-| Silent | one tone at a time, 18–19.4 kHz, faded in and out — above most adults' hearing | ~12 characters/s | 6 bad bytes |
+| Piano | 22 notes of the G pentatonic scale, D4–E8; a rising arpeggio first, a C-major chord last | ~3 characters/s | 6 bad bytes / message |
+| Chirp | 24 short bird-like slides, 4–8.3 kHz         | ~14 characters/s      | 8 bad bytes        |
+| Fast  | four tones at once (4 × 22), 1.5–5.6 kHz — Macs within a few feet | ~50 characters/s | 10 bad bytes |
+| Silent | 22 tones, 17.6–19.6 kHz, faded in and out — above most adults' hearing | ~12 characters/s | 8 bad bytes |
 
 The receiver listens for all four at the same time — you only pick the mode when sending.
-One message carries up to 245 bytes in Piano, 241 in Chirp and Silent, 237 in Fast.
+One message carries up to 241 bytes in Piano, 237 in Chirp and Silent, 233 in Fast.
 
 ## Using it
 
@@ -44,6 +44,13 @@ One message carries up to 245 bytes in Piano, 241 in Chirp and Silent, 237 in Fa
   (16 tones per 4 registers, two samples per loop) measures each tone. The receiver keeps which
   tone won and by how much, waits for the preamble in every group, scores one symbol's worth of
   alignments and settles on the middle of the best ones, then reads a symbol every 8 hops.
+- **Echo** (2.0): a few feet away most of what a microphone hears is the room still ringing with
+  the last few tones. So a tone rests for a few symbols after it plays (6 in Piano, Silent and
+  Fast, 8 in Chirp); each nibble is the rank of its tone among the tones allowed at that
+  moment, and the receiver leaves the resting tones out when it listens — both ends keep the same
+  history, starting from the preamble. In simulated rooms where the echo is as loud as the sound,
+  every mode now gets through; Piano, Chirp and Silent also when it is 5 dB louder (`test/room_test.py`).
+  This changed what's on the air: 2.0 and 1.x don't understand each other.
 - **Piano notes in real rooms**: small speakers and echoes can bury a note's fundamental, and
   its octave and fifth are other notes of the scale, so each note is scored as its own energy
   plus half that of its 2nd and 3rd harmonics (tones 16–47 of the filter bank). Found with a
@@ -86,6 +93,7 @@ Double-click **Install asmtone.command** — it runs the self-tests, builds, sig
 identity if there is one, otherwise ad-hoc, hardened runtime), installs to /Applications,
 pins it to the Dock, launches it and commits the build to git. Or `make`, `make selftest`, `make install`.
 
+`sh test/run_linux.sh` also plays every mode through simulated echoing rooms.
 The self-tests play every mode through a simulated room (two echoes and hiss), with the two
 sound cards' clocks 200 ppm apart, with a burst of loud noise, back to back, at the maximum
 length, and check that five seconds of hiss produce nothing. The modem files also assemble as

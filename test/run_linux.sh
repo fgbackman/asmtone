@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds asmtone's modem for ARM64 Linux and runs its self-tests (no Mac needed),
-# then decodes a real recording made through a Mac's speaker and microphone.
+# Builds asmtone's modem for ARM64 Linux and runs its self-tests (no Mac needed), then
+# plays every mode through simulated echoing rooms (needs python3 + numpy).
 set -e
 cd "$(dirname "$0")/.."
 B=${TMPDIR:-/tmp}/asmtone-linux
@@ -11,8 +11,9 @@ done
 gcc -O1 -no-pie -o "$B/modemtest" test/linux_main.c "$B"/fec.o "$B"/dsp.o "$B"/modem.o "$B"/selftest.o -lm
 "$B/modemtest"
 gcc -O1 -no-pie -w -o "$B/analyze" test/analyze.c "$B"/fec.o "$B"/dsp.o "$B"/modem.o -lm
-if "$B/analyze" test/fixtures/room-piano.wav | grep -q "MESSAGE (24 bytes.*piano test one two three"; then
-  echo "PASS  recorded room: Piano from the Mac mini's speaker, through its microphone"
+gcc -O1 -no-pie -w -o "$B/render" test/render.c "$B"/fec.o "$B"/dsp.o "$B"/modem.o -lm
+if python3 -c "import numpy" 2>/dev/null; then
+  python3 test/room_test.py "$B"
 else
-  echo "FAIL  recorded room: Piano from the Mac mini's speaker, through its microphone"; exit 1
+  echo "(numpy missing: room tests skipped)"
 fi

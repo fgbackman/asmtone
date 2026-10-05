@@ -28,7 +28,7 @@ Ls_t_sdrift: .asciz "silent: with the clocks 200 ppm apart"
 Ls_t_phigh:  .asciz "piano: through a tiny speaker that loses the low notes"
 Ls_t_pdrift: .asciz "piano: with the clocks 200 ppm apart"
 Ls_t_stop:   .asciz "a message cut off half way is given up quickly"
-Ls_t_long:   .asciz "fast: the longest message (237 bytes)"
+Ls_t_long:   .asciz "fast: the longest message (233 bytes)"
 Ls_t_max:    .asciz "a message one byte too long is refused"
 Ls_done:     .asciz "self-tests done"
 
@@ -169,9 +169,9 @@ _selftest:
     ADRL x1, Ls_t_quiet
     bl   _result
 
-    mov  x0, #MODE_FAST               // 238 bytes in Fast: refused
+    mov  x0, #MODE_FAST               // 234 bytes in Fast: refused
     ADRL x1, _t_long
-    mov  x2, #238
+    mov  x2, #234
     bl   _tx_render
     cmp  x0, #0
     cset x0, eq
@@ -314,7 +314,7 @@ _t_loop:
     mov  x19, x0
     mov  x20, x1
     tbz  x20, #3, 1f
-    ADRL x22, _t_long                 // 237 bytes of text
+    ADRL x22, _t_long                 // 233 bytes of text
     mov  x9, #0
 0:  mov  x10, #33
     udiv x11, x9, x10
@@ -322,9 +322,9 @@ _t_loop:
     add  x10, x10, #65
     strb w10, [x22, x9]
     add  x9, x9, #1
-    cmp  x9, #237
+    cmp  x9, #233
     b.lo 0b
-    mov  x23, #237
+    mov  x23, #233
     b    2f
 1:  ADRL x22, Ls_msg
     mov  x0, x22

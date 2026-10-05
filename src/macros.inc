@@ -125,7 +125,7 @@
 .set HIST,        128        // hops of history per mode
 
 // mode table (_modes): 512 bytes per mode
-.set M_NT,        0          // tones (16 or 64)
+.set M_NT,        0          // tones in the filter bank (a multiple of 16, at most 128)
 .set M_NG,        4          // tone groups sounding at once (1 or 4); each carries a nibble
 .set M_S,         8          // samples per symbol
 .set M_W,         12         // samples in the detection window
@@ -134,11 +134,13 @@
 .set M_NR,        24         // Reed–Solomon parity bytes
 .set M_WIN,       28         // 1: Hann window (notes off the FFT grid)
 .set M_QMIN,      32         // float: how clean a preamble symbol must be
-.set M_VOICE,     36         // 0 piano, 1 chirp, 2 fast
+.set M_VOICE,     36         // 0 piano, 1 chirp, 2 fast, 3 silent
 .set M_AMP,       40         // float
 .set M_TAIL,      44         // samples after the last symbol
-.set M_HARM,      48         // 3: score each note with its 2nd and 3rd harmonics (tones 16-47)
-.set M_FREQ,      64         // 64 floats
+.set M_HARM,      48         // 3: score each note with its 2nd and 3rd harmonics (rows 2 and 3)
+.set M_NV,        52         // tones each group can play (16 + M_KEX)
+.set M_KEX,       56         // a tone isn't used again for this many symbols (room echo)
+.set M_FREQ,      64         // up to 112 floats: group g's tone v is M_FREQ[g * NV + v]
 .set MODE_SHIFT,  9
 
 // receiver state (_rx): 4096 bytes per mode
@@ -152,13 +154,14 @@
 .set R_H0,        48         // u64: first hop of the aligning stretch
 .set R_LEN,       56         // payload length from the header
 .set R_QSUM,      60         // float: summed quality while receiving
-.set R_COEF,      64         // 64 floats: Goertzel coefficients
-.set R_HBEST,     320        // HIST x 4 bytes: best tone per group, per hop
-.set R_HQ,        832        // HIST floats: quality per hop
-.set R_NIBS,      1344       // 544 bytes
-.set R_ENER,      1888       // 64 floats
-.set R_BYTES,     2144       // 272 bytes
-.set R_RSC,       2432       // 16 floats: alignment scores
-.set R_STATS,     2496       // u64 x 4: ok, repaired, lost, length unreadable
-.set R_LOWQ,      2528       // symbols in a row that were barely there
+.set R_COEF,      64         // 128 floats: Goertzel coefficients
+.set R_HBEST,     576        // HIST x 4 bytes: best tone per group, per hop
+.set R_HQ,        1088       // HIST floats: quality per hop
+.set R_NIBS,      1600       // 544 bytes
+.set R_ENER,      2144       // 128 floats
+.set R_BYTES,     2656       // 272 bytes
+.set R_RSC,       2944       // 16 floats: alignment scores
+.set R_STATS,     3008       // u64 x 4: ok, repaired, lost, length unreadable
+.set R_LOWQ,      3040       // symbols in a row that were barely there
+.set R_THIST,     3048       // 4 groups x 8 bytes: the last 8 tones each group played
 .set RX_SHIFT,    12

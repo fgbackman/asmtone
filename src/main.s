@@ -112,6 +112,7 @@ Ls_a_failed:    .asciz "showFailed:"
 Ls_fail_dir:    .asciz "%s/Library/Application Support/asmtone"
 Ls_fail_path:   .asciz "%s/last-failed-message.wav"
 Ls_fail_none:   .asciz "No failed message yet"
+Ls_fast_far:    .asciz "Fast needs the Macs close together \342\200\224 from further away use Chirp, Silent or Piano"
 Ls_st_clip:     .asciz "Too loud: the microphone is overloading \342\200\224 turn the other Mac down or move apart"
 Ls_NSWorkspace: .asciz "NSWorkspace"
 Ls_NSURL:       .asciz "NSURL"
@@ -1619,6 +1620,10 @@ _m_heard:
     mov  x4, #0
     bl   _log_line
     bl   _save_failed                     // keep the sound, for Show Last Failed Message
+    cmp  x22, #MODE_FAST                  // Fast is the one that needs the Macs close
+    b.ne 8f
+    ADRL x0, Ls_fast_far
+    bl   _notice
     b    8f
 1:  GET  x9, _g_n_heard
     add  x9, x9, #1

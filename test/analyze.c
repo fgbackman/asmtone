@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
                 if (st == 1) printf("%7.3fs %s: preamble seen at hop %lu\n", i / 48000.0, names[m], (unsigned long)U64(r + 48));
                 if (st == 2) {
                     printf("%7.3fs %s: locked; scores", i / 48000.0, names[m]);
-                    for (int k = 0; k < 8; k++) printf(" %.2f", F32(r + 2432 + 4 * k));
+                    for (int k = 0; k < 8; k++) printf(" %.2f", F32(r + 2944 + 4 * k));
                     printf("; first data hop %lu\n", (unsigned long)U64(r + 40));
                 }
                 if (st == 0 && lastst[m] == 2) printf("%7.3fs %s: back to hunting after %d nibbles (need %d)\n", i / 48000.0, names[m], (int)lastnib[m], U32(r + 36));
@@ -48,12 +48,12 @@ int main(int argc, char **argv) {
             if (st == 2 && nib != (int)lastnib[m]) {
                 uint64_t h = hop - 1; int idx = h & 127;
                 printf("        %s sym hop %lu: nib", names[m], (unsigned long)h);
-                for (int g = 0; g < NG[m]; g++) printf(" %2d", r[320 + idx * 4 + g]);
-                printf("  q %.2f", F32(r + 832 + idx * 4));
+                for (int g = 0; g < NG[m] && nib - NG[m] + g >= 0; g++) printf(" %2d", r[1600 + nib - NG[m] + g]);
+                printf("  q %.2f", F32(r + 1088 + idx * 4));
                 if (verbose) {   /* the neighbouring hops, to see if the alignment is off */
                     printf("   [");
                     for (int d = -4; d <= 4; d++) { int j = (h + d) & 127; if (d > 0) break;
-                        printf(" %d:%d/%.2f", d, r[320 + j * 4], F32(r + 832 + j * 4)); }
+                        printf(" %d:%d/%.2f", d, r[576 + j * 4], F32(r + 1088 + j * 4)); }
                     printf(" ]");
                 }
                 printf("\n");

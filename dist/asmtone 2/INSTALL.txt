@@ -1,0 +1,76 @@
+asmtone 1.2 — send text from one Mac to another as sound
+========================================================
+
+You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
+Intel Macs are not supported.
+
+
+INSTALL
+-------
+
+1. Double-click asmtone-1.2-mac-arm64.zip to unzip it (Safari may already have done this).
+
+2. Drag asmtone.app into your Applications folder.
+
+3. Open it the first time. asmtone isn't from the App Store, so macOS checks with you first:
+
+   macOS 15 Sequoia and later
+     a. Double-click asmtone in Applications. macOS says it "Not Opened". Click Done.
+     b. Open System Settings > Privacy & Security, scroll down to
+        "asmtone was blocked to protect your Mac", and click Open Anyway.
+     c. Enter your password if asked, then click Open Anyway again.
+
+   macOS 12 - 14
+     Right-click (or Control-click) asmtone in Applications, choose Open, then click Open.
+
+   You only do this once. After that asmtone opens like any other app.
+
+   (Terminal alternative, any macOS:  xattr -dr com.apple.quarantine /Applications/asmtone.app )
+
+4. When asmtone asks to use the microphone, click Allow. It needs the microphone to hear
+   messages; nothing is recorded or sent anywhere. If you clicked Don't Allow by mistake:
+   System Settings > Privacy & Security > Microphone > turn on asmtone.
+
+5. Optional: to keep it in the Dock, right-click its Dock icon > Options > Keep in Dock.
+
+
+USE
+---
+
+- Install asmtone on two Macs in the same room, with Listen on (it is on by default).
+- On one Mac, pick Piano, Chirp, Fast or Silent, type a message and press Return.
+  The other Mac writes it down.
+
+     Piano   piano notes                   about 3 characters a second
+     Chirp   short bird-like chirps        about 14 characters a second
+     Fast    four tones at once            about 50 characters a second
+     Silent  18-19 kHz, too high for most  about 12 characters a second
+             adults to hear (children and dogs may)
+
+  The receiver hears all four at once; you only choose a mode when sending.
+  One message holds up to about 240 characters (fewer for emoji and accents).
+
+- Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast / Silent, Listen,
+  Copy Last Message, Save Last Minute of Sound, Show Last Failed Message.
+  While a message is arriving the icon shows how far along it is. It dims when not listening.
+- Dock icon: right-click for the same send items. A badge counts messages heard while you were
+  in another app.
+
+Tips
+- Turn the volume up to about half or more. Fast likes the Macs within a few metres;
+  Piano and Chirp carry further and cope better with noise.
+- A Mac doesn't hear its own messages (it stops listening while it plays).
+- "N bytes repaired" means some sound was damaged and asmtone fixed it.
+  A red line means a message was too damaged to fix: send it again, or try another mode.
+- If a message fails, asmtone keeps its sound: menu bar > Show Last Failed Message shows the
+  file (last-failed-message.wav) so you can send it to whoever is helping you.
+- "Too loud: the microphone is overloading" means the Macs are too close or too loud:
+  turn the sending Mac's volume down a little.
+- Silent needs speakers and microphones that reach 19 kHz; most Macs do. If Silent never
+  arrives, turn the volume up, or move the Macs closer.
+
+
+UNINSTALL
+---------
+
+Quit asmtone (menu bar icon > Quit asmtone) and drag it from Applications to the Trash.
