@@ -1,4 +1,4 @@
-asmtone 1.1 — send text from one Mac to another as sound
+asmtone 1.2 — send text from one Mac to another as sound
 ========================================================
 
 You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
@@ -8,7 +8,7 @@ Intel Macs are not supported.
 INSTALL
 -------
 
-1. Double-click asmtone-1.1-mac-arm64.zip to unzip it (Safari may already have done this).
+1. Double-click asmtone-1.2-mac-arm64.zip to unzip it (Safari may already have done this).
 
 2. Drag asmtone.app into your Applications folder.
 
@@ -51,7 +51,7 @@ USE
   One message holds up to about 240 characters (fewer for emoji and accents).
 
 - Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast / Silent, Listen,
-  Copy Last Message, Save Last 30 Seconds of Sound (for reporting a problem).
+  Copy Last Message, Save Last Minute of Sound, Show Last Failed Message.
   While a message is arriving the icon shows how far along it is. It dims when not listening.
 - Dock icon: right-click for the same send items. A badge counts messages heard while you were
   in another app.
@@ -62,6 +62,10 @@ Tips
 - A Mac doesn't hear its own messages (it stops listening while it plays).
 - "N bytes repaired" means some sound was damaged and asmtone fixed it.
   A red line means a message was too damaged to fix: send it again, or try another mode.
+- If a message fails, asmtone keeps its sound: menu bar > Show Last Failed Message shows the
+  file (last-failed-message.wav) so you can send it to whoever is helping you.
+- "Too loud: the microphone is overloading" means the Macs are too close or too loud:
+  turn the sending Mac's volume down a little.
 - Silent needs speakers and microphones that reach 19 kHz; most Macs do. If Silent never
   arrives, turn the volume up, or move the Macs closer.
 

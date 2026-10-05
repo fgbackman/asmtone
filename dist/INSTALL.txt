@@ -1,4 +1,4 @@
-asmtone 1.0 — send text from one Mac to another as sound
+asmtone 1.1 — send text from one Mac to another as sound
 ========================================================
 
 You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
@@ -8,7 +8,7 @@ Intel Macs are not supported.
 INSTALL
 -------
 
-1. Double-click asmtone-1.0-mac-arm64.zip to unzip it (Safari may already have done this).
+1. Double-click asmtone-1.1-mac-arm64.zip to unzip it (Safari may already have done this).
 
 2. Drag asmtone.app into your Applications folder.
 
@@ -38,17 +38,20 @@ USE
 ---
 
 - Install asmtone on two Macs in the same room, with Listen on (it is on by default).
-- On one Mac, pick Piano, Chirp or Fast, type a message and press Return.
+- On one Mac, pick Piano, Chirp, Fast or Silent, type a message and press Return.
   The other Mac writes it down.
 
      Piano   piano notes                   about 3 characters a second
      Chirp   short bird-like chirps        about 14 characters a second
      Fast    four tones at once            about 50 characters a second
+     Silent  18-19 kHz, too high for most  about 12 characters a second
+             adults to hear (children and dogs may)
 
-  The receiver hears all three at once; you only choose a mode when sending.
+  The receiver hears all four at once; you only choose a mode when sending.
   One message holds up to about 240 characters (fewer for emoji and accents).
 
-- Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast, Listen, Copy Last Message.
+- Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast / Silent, Listen,
+  Copy Last Message, Save Last 30 Seconds of Sound (for reporting a problem).
   While a message is arriving the icon shows how far along it is. It dims when not listening.
 - Dock icon: right-click for the same send items. A badge counts messages heard while you were
   in another app.
@@ -58,7 +61,9 @@ Tips
   Piano and Chirp carry further and cope better with noise.
 - A Mac doesn't hear its own messages (it stops listening while it plays).
 - "N bytes repaired" means some sound was damaged and asmtone fixed it.
-  A red line means a message was too damaged to fix: send it again, or use Piano.
+  A red line means a message was too damaged to fix: send it again, or try another mode.
+- Silent needs speakers and microphones that reach 19 kHz; most Macs do. If Silent never
+  arrives, turn the volume up, or move the Macs closer.
 
 
 UNINSTALL

@@ -68,6 +68,7 @@ Lk_db60:    .float 60.0
 Lk_inv60:   .float 0.016666666666666666
 Lk_fall:    .float 0.06
 Lk_tiny:    .float 1.0e-6
+Lk_clip:    .float 0.98
 
 .section __TEXT,__cstring
 Ls_selftest_flag: .asciz "--selftest"
@@ -105,14 +106,25 @@ Ls_pre_sent:    .asciz "%s  %-5s \342\226\270  "
 Ls_pre_heard:   .asciz "%s  %-5s \342\227\202  "
 Ls_bad_text:    .asciz "a message arrived too damaged to read"
 Ls_nohdr_text:  .asciz "heard the start of a message but couldn't read its length"
-Ls_mi_rec:      .asciz "Save Last 30 Seconds of Sound"
+Ls_mi_rec:      .asciz "Save Last Minute of Sound"
+Ls_mi_failed:   .asciz "Show Last Failed Message"
+Ls_a_failed:    .asciz "showFailed:"
+Ls_fail_dir:    .asciz "%s/Library/Application Support/asmtone"
+Ls_fail_path:   .asciz "%s/last-failed-message.wav"
+Ls_fail_none:   .asciz "No failed message yet"
+Ls_st_clip:     .asciz "Too loud: the microphone is overloading \342\200\224 turn the other Mac down or move apart"
+Ls_NSWorkspace: .asciz "NSWorkspace"
+Ls_NSURL:       .asciz "NSURL"
+Ls_sharedWS:    .asciz "sharedWorkspace"
+Ls_fileURL:     .asciz "fileURLWithPath:"
+Ls_activateFV:  .asciz "activateFileViewerSelectingURLs:"
 Ls_a_rec:       .asciz "saveRecording:"
 Ls_key_s:       .asciz "s"
 Ls_rec_dir1:    .asciz "%s/Developer/asmtone/recordings"
 Ls_rec_dir2:    .asciz "%s/Desktop"
 Ls_rec_time:    .asciz "%Y%m%d-%H%M%S"
 Ls_rec_path:    .asciz "%s/heard-%s.wav"
-Ls_rec_ok:      .asciz "Saved the last 30 seconds: %s"
+Ls_rec_ok:      .asciz "Saved the last minute: %s"
 Ls_rec_fail:    .asciz "Couldn't save the recording (is Listen on?)"
 Ls_fixed_fmt:   .asciz "   (%ld bytes repaired)"
 Ls_nl:          .asciz "\n"
@@ -331,6 +343,7 @@ Lmethods:
     .quad Ls_a_dock,    _m_dock,    Ls_t_at
     .quad Ls_a_start,   _m_start,   Ls_t_v
     .quad Ls_a_rec,     _m_recsave, Ls_t_v
+    .quad Ls_a_failed,  _m_showfailed, Ls_t_v
     .quad 0
 Lmic_block:                               // a global block: ^(BOOL granted) { ... }
     .quad __NSConcreteGlobalBlock
@@ -380,6 +393,7 @@ _g_tbuf:     .space 64
 _g_tm:       .space 64
 _g_dir:      .space 512
 _g_path:     .space 768
+_g_fpath:    .space 768                  // last-failed-message.wav
 
 .text
 .p2align 2
@@ -635,6 +649,13 @@ _build_menus:
     ADRL x1, Ls_mi_rec
     ADRL x2, Ls_a_rec
     ADRL x3, Ls_key_s
+    GET  x4, _g_ctl
+    mov  x5, #0
+    bl   _menu_item
+    mov  x0, x20
+    ADRL x1, Ls_mi_failed
+    ADRL x2, Ls_a_failed
+    ADRL x3, Ls_key_none
     GET  x4, _g_ctl
     mov  x5, #0
     bl   _menu_item
@@ -1140,6 +1161,13 @@ _build_status_item:
     mov  x5, #0
     bl   _menu_item
     mov  x0, x19
+    ADRL x1, Ls_mi_failed
+    ADRL x2, Ls_a_failed
+    ADRL x3, Ls_key_none
+    GET  x4, _g_ctl
+    mov  x5, #0
+    bl   _menu_item
+    mov  x0, x19
     bl   _add_separator
     mov  x0, x19
     ADRL x1, Ls_mi_open
@@ -1590,6 +1618,7 @@ _m_heard:
     mov  x2, x23
     mov  x4, #0
     bl   _log_line
+    bl   _save_failed                     // keep the sound, for Show Last Failed Message
     b    8f
 1:  GET  x9, _g_n_heard
     add  x9, x9, #1
@@ -1659,8 +1688,16 @@ _m_tick:
     bl   _rx_peak_take
     fmov s8, s0
     GET  x9, _g_listening
-    cbnz x9, 1f
+    cbnz x9, 0f
     fmov s8, wzr
+0:  LDS  s1, Lk_clip                      // overloading (and not just hearing ourselves)?
+    fcmp s8, s1
+    b.lt 1f
+    ADRL x9, _rx_mute
+    ldr  x9, [x9]
+    cbnz x9, 1f
+    ADRL x0, Ls_st_clip
+    bl   _notice
 1:  LDS  s1, Lk_tiny                      // 0 at -60 dB, 1 at 0 dB
     fmax s0, s8, s1
     CALLC log10f
@@ -1911,3 +1948,62 @@ _m_recsave:
     bl   _notice
     bl   _NSBeep
     LEAVE 32
+
+// const char *_failed_path(void) — ~/Library/Application Support/asmtone/last-failed-message.wav
+_failed_path:
+    ENTER 16
+    bl   _NSHomeDirectory
+    MSG0 Ls_UTF8String
+    str  x0, [sp]
+    ADRL x0, _g_dir
+    mov  x1, #512
+    ADRL x2, Ls_fail_dir
+    bl   _snprintf
+    ADRL x0, _g_dir
+    mov  w1, #0x1ED
+    bl   _mkdir
+    ADRL x9, _g_dir
+    str  x9, [sp]
+    ADRL x0, _g_fpath
+    mov  x1, #768
+    ADRL x2, Ls_fail_path
+    bl   _snprintf
+    ADRL x0, _g_fpath
+    LEAVE 16
+
+// _save_failed(void) — the last minute of sound, which holds the message that failed
+_save_failed:
+    ENTER 0
+    bl   _failed_path
+    bl   _rec_save
+    LEAVE 0
+
+// showFailed: — reveal last-failed-message.wav in Finder (to send it to whoever's helping)
+_m_showfailed:
+    ENTER 16
+    bl   _failed_path
+    mov  x19, x0
+    mov  w1, #0                           // F_OK
+    bl   _access
+    cbz  w0, 1f
+    ADRL x0, Ls_fail_none
+    bl   _notice
+    bl   _NSBeep
+    LEAVE 16
+1:  mov  x0, x19
+    bl   _nsstr
+    mov  x20, x0
+    CLS  Ls_NSURL
+    mov  x2, x20
+    MSG1 Ls_fileURL
+    str  x0, [sp, #96]
+    CLS  Ls_NSArray
+    add  x2, sp, #96
+    mov  x3, #1
+    MSG2 Ls_arrayObjs
+    mov  x20, x0
+    CLS  Ls_NSWorkspace
+    MSG0 Ls_sharedWS
+    mov  x2, x20
+    MSG1 Ls_activateFV
+    LEAVE 16

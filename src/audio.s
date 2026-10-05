@@ -6,7 +6,7 @@
 .include "macros.inc"
 
 .set OUT_FRAMES, 4096
-.set REC_N,      1440000             // the last 30 s of microphone sound, for Save Last 30 Seconds
+.set REC_N,      2880000             // the last 60 s of microphone sound, for Save Last Minute of Sound
 .set IN_FRAMES,  2048
 // AudioQueueBuffer
 .set AB_DATA,    8
@@ -405,7 +405,7 @@ _rec_push:
 2:  str  x12, [x11]
 9:  ret
 
-// long _rec_save(const char *path) — the last 30 s (or less) as a 16-bit 48 kHz WAV; 0 = saved
+// long _rec_save(const char *path) — the last 60 s (or less) as a 16-bit 48 kHz WAV; 0 = saved
 .globl _rec_save
 _rec_save:
     ENTER 32
