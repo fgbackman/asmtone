@@ -11,7 +11,7 @@ CC      := clang
 ARCH    := -arch arm64 -mmacosx-version-min=12.0
 SRCDIR  := src
 SRCS    := $(SRCDIR)/main.s $(SRCDIR)/util.s $(SRCDIR)/audio.s $(SRCDIR)/modem.s \
-           $(SRCDIR)/dsp.s $(SRCDIR)/fec.s $(SRCDIR)/selftest.s
+           $(SRCDIR)/dsp.s $(SRCDIR)/fec.s $(SRCDIR)/text.s $(SRCDIR)/selftest.s
 OBJS    := $(SRCS:.s=.o)
 FRAMEWORKS := -framework Cocoa -framework AudioToolbox -framework CoreAudio -framework AVFoundation
 APP     := asmtone.app
@@ -26,7 +26,7 @@ all: $(APP)
 asmtone: $(OBJS)
 	$(CC) $(ARCH) -o $@ $(OBJS) $(FRAMEWORKS)
 
-$(SRCDIR)/%.o: $(SRCDIR)/%.s $(SRCDIR)/macros.inc
+$(SRCDIR)/%.o: $(SRCDIR)/%.s $(SRCDIR)/macros.inc $(SRCDIR)/text_tables.inc
 	$(CC) $(ARCH) -I $(SRCDIR) -c $< -o $@
 
 $(APP): asmtone Info.plist icon/AppIcon.icns

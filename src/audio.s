@@ -42,7 +42,7 @@ _tx_live:   .quad 0                  // buffers out with the speaker
 _tx_active: .quad 0
 .globl _audio_ctl
 _audio_ctl: .quad 0                  // who hears about it (the controller)
-_sinkbuf:   .space 272
+_sinkbuf:   .space 2064
 _rec_buf:   .quad 0
 _rec_i:     .quad 0                  // where the next sample goes
 _rec_tot:   .quad 0                  // samples ever recorded

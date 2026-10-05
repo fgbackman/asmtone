@@ -1,4 +1,4 @@
-asmtone 2.1 — send text from one Mac to another as sound
+asmtone 3.0 — send text from one Mac to another as sound
 ========================================================
 
 You need: a Mac with Apple Silicon (M1, M2, M3, M4 ...) running macOS 12 Monterey or later.
@@ -8,7 +8,7 @@ Intel Macs are not supported.
 INSTALL
 -------
 
-1. Double-click asmtone-2.1-mac-arm64.zip to unzip it (Safari may already have done this).
+1. Double-click asmtone-3.0-mac-arm64.zip to unzip it (Safari may already have done this).
 
 2. Drag asmtone.app into your Applications folder.
 
@@ -38,21 +38,23 @@ USE
 ---
 
 - Install asmtone on two Macs in the same room, with Listen on (it is on by default).
-  Both Macs need version 2.x: it plays differently from 1.x, so the two don't understand
-  each other.
-- On one Mac, pick Piano, Chirp, Fast or Silent, type a message and press Return.
-  The other Mac writes it down.
+  Both Macs need version 3.0: it plays differently from 1.x and 2.x, so they don't
+  understand each other.
+- On one Mac, pick a mode, type a message and press Return. The other Mac writes it down.
 
-     Piano   piano notes                   about 3 characters a second
-     Chirp   short bird-like chirps        about 14 characters a second
-     Fast    four tones at once            about 50 characters a second
-     Silent  17.6-19.6 kHz, too high for   about 12 characters a second
+     Piano   piano, one note at a time      up to 6 characters a second
+     Duet    piano, two hands               up to 9 a second (Macs within a few feet)
+     Chirp   short bird-like chirps         up to 25 a second
+     Fast    four tones at once             up to 90 a second (Macs within a few feet)
+     Silent  17.6-19.6 kHz, too high for    up to 22 a second
              most adults to hear (children and dogs may)
 
-  The receiver hears all four at once; you only choose a mode when sending.
-  One message holds up to about 240 characters (fewer for emoji and accents).
+  Speeds are for ordinary English: text is compressed before it's played (common letters
+  take fewer notes). Short messages take a little longer per character, because every
+  message starts with a short opening run of notes. The receiver hears every mode at once;
+  you only choose one when sending. One message holds roughly 400 characters of English.
 
-- Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast / Silent, Listen,
+- Menu bar (piano keys icon): Send Clipboard as Piano / Chirp / Fast / Silent / Duet, Listen,
   Copy Last Message, Save Last Minute of Sound, Show Last Failed Message.
   While a message is arriving the icon shows how far along it is. It dims when not listening.
 - Dock icon: right-click for the same send items. A badge counts messages heard while you were
@@ -61,7 +63,7 @@ USE
 Tips
 - Turn the volume up to about half or more.
 - Distance: Piano, Chirp and Silent work across a room (they cope with the room's echo);
-  Fast needs the Macs within a few feet of each other.
+  Fast and Duet need the Macs within a few feet of each other.
 - A Mac doesn't hear its own messages (it stops listening while it plays).
 - "N bytes repaired" means some sound was damaged and asmtone fixed it.
   A red line means a message was too damaged to fix: send it again, or try another mode.

@@ -9,8 +9,8 @@
 extern void _modem_init(void); extern void _rx_reset(void);
 extern void _rx_feed(const float *, long);
 extern unsigned char _rx[]; extern void *_rx_sink; extern long _rx_total;
-static const char *names[] = { "piano", "chirp", "fast", "silent" };
-static const int NG[] = { 1, 1, 4, 1 }, K = 8;
+static const char *names[] = { "piano", "chirp", "fast", "silent", "duet" };
+static const int NG[] = { 1, 1, 4, 1, 1 }, K = 8;
 static void sink(long m, const unsigned char *b, long len, long fixed) {
     if (len >= 0) printf("  >>> %s MESSAGE (%ld bytes, %ld repaired): %.*s\n", names[m], len, fixed, (int)len, b);
     else if (len == -1) printf("  >>> %s: too damaged to repair\n", names[m]);
@@ -27,11 +27,11 @@ int main(int argc, char **argv) {
     for (long i = 0; i < n; i++) { x[i] = pcm[i] / 32768.0f; if (abs(pcm[i]) > pk) pk = abs(pcm[i]); }
     printf("%s: %.1f s, peak %.0f/32767\n", argv[1], n / 48000.0, pk);
     _modem_init(); _rx_sink = (void *)sink; _rx_reset();
-    int lastst[4] = {0}; uint64_t lastnib[4] = {0}; int verbose = argc > 2;
+    int lastst[5] = {0}; uint64_t lastnib[5] = {0}; int verbose = argc > 2;
     for (long i = 0; i < n; i += 240) {
         long c = n - i < 240 ? n - i : 240;
         _rx_feed(x + i, c);
-        for (int m = 0; m < 4; m++) {
+        for (int m = 0; m < 5; m++) {
             unsigned char *r = _rx + m * 4096;
             int st = U32(r + 16), nib = U32(r + 20);
             uint64_t hop = U64(r + 8);
@@ -47,8 +47,7 @@ int main(int argc, char **argv) {
             }
             if (st == 2 && nib != (int)lastnib[m]) {
                 uint64_t h = hop - 1; int idx = h & 127;
-                printf("        %s sym hop %lu: nib", names[m], (unsigned long)h);
-                for (int g = 0; g < NG[m] && nib - NG[m] + g >= 0; g++) printf(" %2d", r[1600 + nib - NG[m] + g]);
+                printf("        %s sym hop %lu: %4d bits, best tone %3d", names[m], (unsigned long)h, nib, r[576 + idx * 4]);
                 printf("  q %.2f", F32(r + 1088 + idx * 4));
                 if (verbose) {   /* the neighbouring hops, to see if the alignment is off */
                     printf("   [");

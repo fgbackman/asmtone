@@ -113,11 +113,12 @@
 // The modem
 // ---------------------------------------------------------------------------
 .set SR,          48000
-.set NMODES,      4
+.set NMODES,      5
 .set MODE_PIANO,  0
 .set MODE_CHIRP,  1
 .set MODE_FAST,   2
 .set MODE_SILENT, 3
+.set MODE_DUET,   4
 .set NPRE,        8          // preamble symbols
 .set LEAD,        14400      // 300 ms of silence before a message: speakers fade in when sound starts
 .set PLEN,        11520      // how long a piano note rings (240 ms)
@@ -139,17 +140,21 @@
 .set M_TAIL,      44         // samples after the last symbol
 .set M_HARM,      48         // 3: score each note with its 2nd and 3rd harmonics (rows 2 and 3)
 .set M_NV,        52         // tones each group can play (16 + M_KEX)
-.set M_KEX,       56         // a tone isn't used again for this many symbols (room echo)
-.set M_FREQ,      64         // up to 112 floats: group g's tone v is M_FREQ[g * NV + v]
+.set M_KEX,       56         // tones left out because they're still echoing (the last KEX played)
+.set M_BPS,       60         // bits each symbol carries
+.set M_PAIR,      64         // 1: two notes at once (Piano's two hands): 6 bits a beat
+.set M_QLOW,      68         // float: a symbol this unclear counts as silence (sender gone)
+.set M_PRE,       72         // 8 bytes: the preamble's tones
+.set M_FREQ,      80         // up to 108 floats: group g's tone v is M_FREQ[g * NV + v]
 .set MODE_SHIFT,  9
 
 // receiver state (_rx): 4096 bytes per mode
 .set R_NEXT,      0          // u64: sample count of the next detection
 .set R_HOPN,      8          // u64: detections so far
 .set R_STATE,     16         // 0 hunting, 1 aligning, 2 receiving
-.set R_NIB,       20         // nibbles received
+.set R_NIB,       20         // bits received
 .set R_CAND,      24         // u64: chosen alignment (a hop number)
-.set R_NEED,      36         // nibbles the frame needs (0 until the header is in)
+.set R_NEED,      36         // bits the frame needs (0 until the header is in)
 .set R_DHOP,      40         // u64: hop of the next data symbol
 .set R_H0,        48         // u64: first hop of the aligning stretch
 .set R_LEN,       56         // payload length from the header
@@ -157,7 +162,7 @@
 .set R_COEF,      64         // 128 floats: Goertzel coefficients
 .set R_HBEST,     576        // HIST x 4 bytes: best tone per group, per hop
 .set R_HQ,        1088       // HIST floats: quality per hop
-.set R_NIBS,      1600       // 544 bytes
+.set R_NIBS,      1600       // 544 bytes: the bits, packed, high bit first
 .set R_ENER,      2144       // 128 floats
 .set R_BYTES,     2656       // 272 bytes
 .set R_RSC,       2944       // 16 floats: alignment scores

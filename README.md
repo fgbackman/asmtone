@@ -11,6 +11,7 @@ A Cocoa app with a Dock icon and a menu-bar item, written in ARM64 assembly for 
 | Piano | 22 notes of the G pentatonic scale, D4–E8; a rising arpeggio first, a C-major chord last | ~3 characters/s | 6 bad bytes / message |
 | Chirp | 24 short bird-like slides, 4–8.3 kHz         | ~14 characters/s      | 8 bad bytes        |
 | Fast  | four tones at once (4 × 22), 1.5–5.6 kHz — Macs within a few feet | ~50 characters/s | 10 bad bytes |
+| Duet | two Piano notes a beat (2 of 24, G4–A8, D4, E4), 6 bits a beat — Macs within a few feet | up to 9 characters/s | 6 bad bytes |
 | Silent | 22 tones, 17.6–19.6 kHz, faded in and out — above most adults' hearing | ~12 characters/s | 8 bad bytes |
 
 The receiver listens for all four at the same time — you only pick the mode when sending.
@@ -44,6 +45,16 @@ One message carries up to 241 bytes in Piano, 237 in Chirp and Silent, 233 in Fa
   (16 tones per 4 registers, two samples per loop) measures each tone. The receiver keeps which
   tone won and by how much, waits for the preamble in every group, scores one symbol's worth of
   alignments and settles on the middle of the best ones, then reads a symbol every 8 hops.
+- **Packing** (3.0, `text.s`): before it's played the text is Huffman-coded with a fixed table
+  tuned for English (`tools/make_text_tables.py`): space and common letters take 3–5 bits, any
+  other byte (emoji, accents) still fits, and a message that wouldn't get smaller goes as it is.
+  English comes out about 55–60% of its size, so every mode is ~1.7× faster.
+- **Duet** (3.0): two notes a beat. The pair is the loudest note that isn't resting plus the loudest
+  other one that isn't an octave, twelfth or two octaves from it (those could be its overtones),
+  numbered among the allowed pairs; 64 pairs = 6 bits. Echo can make one note fade at the
+  listener, which two-note decisions suffer from more, so Duet is for Macs close together.
+- **Frame** (3.0): L, 3 body bytes, L, 3 more, L, the rest — so a damaged symbol can't spoil two
+  of the three length copies.
 - **Echo** (2.0): a few feet away most of what a microphone hears is the room still ringing with
   the last few tones. So a tone rests for a few symbols after it plays (6 in Piano, Silent and
   Fast, 8 in Chirp); each nibble is the rank of its tone among the tones allowed at that

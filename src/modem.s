@@ -4,7 +4,7 @@
 //
 //   300 ms silence (speakers fade in as sound starts: the first notes would be lost)
 //   preamble   8 symbols rising: tone 0 2 4 5 7 9 10 12 (on the piano: D4 G4 C5 D5 G5 C6 D6 G6)
-//   header     the payload length L, three times (6 nibbles), decided by majority
+//   frame      L, 3 body bytes, L, 3 body bytes, L, the rest (L = payload length, by majority)
 //   body       payload + CRC-16 + Reed–Solomon parity, whitened, high nibble first
 //   (piano only) a closing chord nobody decodes
 //
@@ -12,7 +12,8 @@
 // too damaged to repair, -2 a preamble whose length couldn't be read.
 //
 //            tones            symbol   window   parity   a tone rests   speed
-//   Piano    22 notes         150 ms   85 ms    12       6 symbols      ~3 characters/s
+//   Piano    22 notes         150 ms   85 ms    12       6 symbols      4 bits a beat
+//   Duet     2 of 24 notes    150 ms   85 ms    12       8 notes        6 bits a beat
 //   Chirp    24, 4-8.3 kHz     36 ms   21 ms    16       8              ~14 characters/s
 //   Fast     4 x 22 at once    40 ms   21 ms    20       6              ~50 characters/s
 //   Silent   22, 17.6-19.6 kHz 40 ms   21 ms    16       6              ~12 characters/s
@@ -36,47 +37,115 @@
 
 .include "macros.inc"
 
+// Tone history helpers. A history is 8 bytes, newest last; the excluded (still echoing)
+// tones are its last KEX bytes, i.e. hist[8-KEX .. 7]; \start holds 8 - KEX.
+
+// \out = 1 if tone \t is in hist[\start .. 7] (uses x9 and \tmp)
+.macro RESTING hist, start, t, out, tmp
+    mov  \out, #0
+    mov  \tmp, \start
+L1\@:
+    cmp  \tmp, #8
+    b.hs L2\@
+    ldrb w9, [\hist, \tmp]
+    cmp  x9, \t
+    b.eq L3\@
+    add  \tmp, \tmp, #1
+    b    L1\@
+L3\@:
+    mov  \out, #1
+L2\@:
+.endm
+
+// \out = the \d-th tone (counting from 0) that isn't resting (uses x9, \t1 - \t3)
+.macro NTHFREE hist, start, d, out, t1, t2, t3
+    mov  \out, #0
+    mov  \t2, \d
+L1\@:
+    RESTING \hist, \start, \out, \t1, \t3
+    cbnz \t1, L2\@
+    cbz  \t2, L3\@
+    sub  \t2, \t2, #1
+L2\@:
+    add  \out, \out, #1
+    b    L1\@
+L3\@:
+.endm
+
+// \out = how many non-resting tones are below tone \t (uses x9, \t1 - \t3)
+.macro RANKOF hist, start, t, out, t1, t2, t3
+    mov  \out, #0
+    mov  \t2, #0
+L1\@:
+    cmp  \t2, \t
+    b.hs L2\@
+    RESTING \hist, \start, \t2, \t1, \t3
+    cbnz \t1, L3\@
+    add  \out, \out, #1
+L3\@:
+    add  \t2, \t2, #1
+    b    L1\@
+L2\@:
+.endm
+
+.macro PUSHT hist, t
+    ldr  x9, [\hist]
+    lsr  x9, x9, #8
+    orr  x9, x9, \t, lsl #56
+    str  x9, [\hist]
+.endm
+
+
 RODATA
 .p2align 4
 .globl _modes
 _modes:
-// ---- Piano: G major pentatonic, D4 .. E8 (22 notes; a note waits 6 notes before it plays again) ----
+// ---- Piano: one note a beat, G major pentatonic, G4 .. E8 then D4, E4 (22 notes) ----
     .word 80, 1, 7200, 4096, 900, 8, 12, 1
     .float 0.30
     .word 0
     .float 0.30
     .word 14400
-    .word 3, 22, 6, 0
-    .float 293.6600, 329.6300, 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900
-    .float 880.0000, 1046.5000, 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200
-    .float 2637.0200, 3135.9600, 3520.0000, 4186.0100, 4698.6300, 5274.0400, 587.3200, 659.2600
-    .float 784.0000, 880.0000, 1046.5000, 1174.6600, 1318.5200, 1567.9800, 1760.0000, 2093.0000
-    .float 2349.3200, 2637.0200, 3135.9600, 3520.0000, 4186.0000, 4698.6400, 5274.0400, 6271.9200
-    .float 7040.0000, 8372.0200, 9397.2600, 10548.0800, 880.9800, 988.8900, 1176.0000, 1320.0000
-    .float 1569.7500, 1761.9900, 1977.7800, 2351.9700, 2640.0000, 3139.5000, 3523.9800, 3955.5300
-    .float 4703.9400, 5280.0000, 6279.0000, 7047.9600, 7911.0600, 9407.8800, 10560.0000, 12558.0300
-    .float 14095.8900, 15822.1200, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .word 3, 22, 6, 4
+    .word 0
+    .float 0.25
+    .byte 0, 2, 4, 5, 7, 9, 10, 12     // preamble: rising
+    .float 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900, 880.0000, 1046.5000
+    .float 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200, 2637.0200, 3135.9600
+    .float 3520.0000, 4186.0100, 4698.6300, 5274.0400, 293.6600, 329.6300, 784.0000, 880.0000
+    .float 1046.5000, 1174.6600, 1318.5200, 1567.9800, 1760.0000, 2093.0000, 2349.3200, 2637.0200
+    .float 3135.9600, 3520.0000, 4186.0000, 4698.6400, 5274.0400, 6271.9200, 7040.0000, 8372.0200
+    .float 9397.2600, 10548.0800, 587.3200, 659.2600, 1176.0000, 1320.0000, 1569.7500, 1761.9900
+    .float 1977.7800, 2351.9700, 2640.0000, 3139.5000, 3523.9800, 3955.5300, 4703.9400, 5280.0000
+    .float 6279.0000, 7047.9600, 7911.0600, 9407.8800, 10560.0000, 12558.0300, 14095.8900, 15822.1200
+    .float 880.9800, 988.8900, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
     .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
-    .space 128
+    .space 112
 // ---- Chirp: 24 tones on the 1024-point grid, 4.0 - 8.3 kHz, each sliding up into place ----
     .word 32, 1, 1728, 1024, 216, 8, 16, 0
     .float 0.45
     .word 1
     .float 0.50
     .word 4800
-    .word 1, 24, 8, 0
+    .word 1, 24, 8, 4
+    .word 0
+    .float 0.25
+    .byte 0, 2, 4, 5, 7, 9, 10, 12     // preamble: rising
     .float 4031.2500, 4218.7500, 4406.2500, 4593.7500, 4781.2500, 4968.7500, 5156.2500, 5343.7500
     .float 5531.2500, 5718.7500, 5906.2500, 6093.7500, 6281.2500, 6468.7500, 6656.2500, 6843.7500
     .float 7031.2500, 7218.7500, 7406.2500, 7593.7500, 7781.2500, 7968.7500, 8156.2500, 8343.7500
     .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
-    .space 320
+    .space 304
 // ---- Fast: four groups of 22, interleaved on the grid (bin 32 + 4v + g), 1.5 - 5.6 kHz ----
     .word 96, 4, 1920, 1024, 240, 8, 20, 0
     .float 0.35
     .word 2
     .float 0.22
     .word 4800
-    .word 1, 22, 6, 0
+    .word 1, 22, 6, 16
+    .word 0
+    .float 0.25
+    .byte 0, 2, 4, 5, 7, 9, 10, 12     // preamble: rising
     .float 1500.0000, 1687.5000, 1875.0000, 2062.5000, 2250.0000, 2437.5000, 2625.0000, 2812.5000
     .float 3000.0000, 3187.5000, 3375.0000, 3562.5000, 3750.0000, 3937.5000, 4125.0000, 4312.5000
     .float 4500.0000, 4687.5000, 4875.0000, 5062.5000, 5250.0000, 5437.5000, 1546.8750, 1734.3750
@@ -89,22 +158,45 @@ _modes:
     .float 2765.6250, 2953.1250, 3140.6250, 3328.1250, 3515.6250, 3703.1250, 3890.6250, 4078.1250
     .float 4265.6250, 4453.1250, 4640.6250, 4828.1250, 5015.6250, 5203.1250, 5390.6250, 5578.1250
     .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
-    .space 64
+    .space 48
 // ---- Silent: 22 tones on the grid, 17.6 - 19.6 kHz, faded in and out over 5 ms ----
     .word 32, 1, 1920, 1024, 240, 8, 16, 0
     .float 0.40
     .word 3
     .float 0.50
     .word 4800
-    .word 1, 22, 6, 0
+    .word 1, 22, 6, 4
+    .word 0
+    .float 0.25
+    .byte 0, 2, 4, 5, 7, 9, 10, 12     // preamble: rising
     .float 17625.0000, 17718.7500, 17812.5000, 17906.2500, 18000.0000, 18093.7500, 18187.5000, 18281.2500
     .float 18375.0000, 18468.7500, 18562.5000, 18656.2500, 18750.0000, 18843.7500, 18937.5000, 19031.2500
     .float 19125.0000, 19218.7500, 19312.5000, 19406.2500, 19500.0000, 19593.7500, 0.0000, 0.0000
     .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
-    .space 320
+    .space 304
+// ---- Duet: two notes a beat (Piano's two hands), G4 .. A8 then D4, E4 (24 notes) ----
+    .word 80, 1, 7200, 4096, 900, 8, 12, 1
+    .float 0.30
+    .word 0
+    .float 0.30
+    .word 14400
+    .word 3, 24, 8, 6
+    .word 1
+    .float 0.12
+    .byte 12, 10, 9, 7, 5, 4, 2, 0     // preamble: falling (so it isn't taken for Piano's)
+    .float 392.0000, 440.0000, 523.2500, 587.3300, 659.2600, 783.9900, 880.0000, 1046.5000
+    .float 1174.6600, 1318.5100, 1567.9800, 1760.0000, 2093.0000, 2349.3200, 2637.0200, 3135.9600
+    .float 3520.0000, 4186.0100, 4698.6300, 5274.0400, 6271.9300, 7040.0000, 293.6600, 329.6300
+    .float 784.0000, 880.0000, 1046.5000, 1174.6600, 1318.5200, 1567.9800, 1760.0000, 2093.0000
+    .float 2349.3200, 2637.0200, 3135.9600, 3520.0000, 4186.0000, 4698.6400, 5274.0400, 6271.9200
+    .float 7040.0000, 8372.0200, 9397.2600, 10548.0800, 12543.8600, 14080.0000, 587.3200, 659.2600
+    .float 1176.0000, 1320.0000, 1569.7500, 1761.9900, 1977.7800, 2351.9700, 2640.0000, 3139.5000
+    .float 3523.9800, 3955.5300, 4703.9400, 5280.0000, 6279.0000, 7047.9600, 7911.0600, 9407.8800
+    .float 10560.0000, 12558.0300, 14095.8900, 15822.1200, 18815.7900, 21120.0000, 880.9800, 988.8900
+    .float 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000
+    .space 112
 
-_pre:       .byte 0, 2, 4, 5, 7, 9, 10, 12
-_chord:     .byte 4, 6, 7, 9               // C5 E5 G5 C6
+_chord:     .byte 2, 4, 5, 7               // C5 E5 G5 C6
 
 .p2align 2
 Lk_w:       .float 0.00013089969389957471  // 2*pi / 48000
@@ -113,6 +205,7 @@ Lk_tau:     .float -0.00037878787878787879 // -1 / 2640 (55 ms decay)
 Lk_att:     .float 0.0069444444444444444   // 1 / 144 (3 ms attack)
 Lk_tiny:    .float 1.0e-12
 Lk_tie:     .float 0.97
+Lk_pct3:    .float 0.03
 Lk_lowq:    .float 0.25
 Lk_glide:   .float 0.85
 Lk_chordamp: .float 0.55
@@ -128,7 +221,15 @@ _hann:      .space 16384
 .globl _penv
 _penv:      .space (PLEN * 4)
 _tx_bytes:  .space 288
-_tx_nibs:   .space 640
+_tx_frame:  .space 296                // L, L, L, then the body
+_tx_tones:  .space 2400               // 4 slots a symbol
+_tx_text:   .space 288                // the message, packed
+.globl _rx_text
+_rx_text:   .space 2048               // the last message heard, unpacked
+_harm_idx:  .space (64 * NMODES)      // [mode][note][0/1]: the note an octave / a twelfth above
+                                      // it, or 255 (Piano and Duet)
+_pair_forb: .space 1024               // [i][j] (32 x 32): Duet notes i and j are an octave,
+                                      // twelfth or two octaves apart: never a pair
 .p2align 3
 .globl _rx_total
 _rx_total:  .quad 0
@@ -209,8 +310,94 @@ Lmi_env:
     mov  x9, #PLEN
     cmp  x19, x9
     b.lo Lmi_env
+    ADRL x20, _modes                  // Duet pairs that can't be told apart from one note's
+    add  x20, x20, #(MODE_DUET << MODE_SHIFT)
+    add  x20, x20, #M_FREQ            // overtones: ratio 2, 3 or 4 (within 3%)
+    ADRL x21, _pair_forb
+    mov  x22, #0
+Lmi_fi:
+    mov  x23, #0
+Lmi_fj:
+    ldr  s0, [x20, x22, lsl #2]
+    ldr  s1, [x20, x23, lsl #2]
+    fmax s2, s0, s1
+    fmin s3, s0, s1
+    fdiv s2, s2, s3                   // >= 1
+    mov  w9, #0
+    fmov s4, #2.0
+    bl   _near_ratio
+    orr  w9, w9, w0
+    fmov s4, #3.0
+    bl   _near_ratio
+    orr  w9, w9, w0
+    fmov s4, #4.0
+    bl   _near_ratio
+    orr  w9, w9, w0
+    add  x10, x23, x22, lsl #5
+    strb w9, [x21, x10]
+    add  x23, x23, #1
+    cmp  x23, #24
+    b.lo Lmi_fj
+    add  x22, x22, #1
+    cmp  x22, #24
+    b.lo Lmi_fi
+    mov  x24, #0                      // Piano and Duet: which note sits an octave and a
+Lmi_hm:                               // twelfth above each
+    ADRL x20, _modes
+    add  x20, x20, x24, lsl #MODE_SHIFT
+    ldr  w9, [x20, #M_HARM]
+    cmp  w9, #3
+    b.ne Lmi_hnext
+    ldr  w9, [x20, #M_NV]
+    str  x9, [sp, #96]
+    add  x20, x20, #M_FREQ
+    ADRL x21, _harm_idx
+    add  x21, x21, x24, lsl #6
+    mov  x22, #0
+Lmi_hi:
+    mov  w9, #255
+    add  x11, x21, x22, lsl #1
+    strb w9, [x11]
+    strb w9, [x11, #1]
+    mov  x23, #0
+Lmi_hj:
+    ldr  s0, [x20, x22, lsl #2]
+    ldr  s1, [x20, x23, lsl #2]
+    fdiv s2, s1, s0
+    fmov s4, #2.0
+    bl   _near_ratio
+    cbz  w0, 1f
+    add  x11, x21, x22, lsl #1
+    strb w23, [x11]
+1:  fmov s4, #3.0
+    bl   _near_ratio
+    cbz  w0, 2f
+    add  x11, x21, x22, lsl #1
+    strb w23, [x11, #1]
+2:  add  x23, x23, #1
+    ldr  x9, [sp, #96]
+    cmp  x23, x9
+    b.lo Lmi_hj
+    add  x22, x22, #1
+    cmp  x22, x9
+    b.lo Lmi_hi
+Lmi_hnext:
+    add  x24, x24, #1
+    cmp  x24, #NMODES
+    b.lo Lmi_hm
     bl   _rx_reset
     LEAVE 16
+
+// w0 = 1 if s2 is within 3% of s4. Leaf; keeps w9.
+_near_ratio:
+    fdiv s5, s2, s4
+    fmov s6, #1.0
+    fsub s5, s5, s6
+    fabs s5, s5
+    LDS  s6, Lk_pct3
+    fcmp s5, s6
+    cset w0, lt
+    ret
 
 // ---------------------------------------------------------------------------
 // void _rx_reset(void) — forget everything heard (filter coefficients stay)
@@ -355,20 +542,47 @@ _rx_hop:
     b.ne Lh_nofold
     add  x10, x21, #R_ENER
     ldr  w13, [x20, #M_NV]
+    ldr  w14, [x21, #R_STATE]         // while receiving, an overtone that is itself a note
+    cmp  w14, #2                      // still echoing doesn't count
+    cset x14, eq
+    ldr  w15, [x20, #M_KEX]
+    mov  x16, #8
+    sub  x16, x16, x15
+    add  x15, x21, #R_THIST
+    ADRL x17, _harm_idx
+    add  x17, x17, x19, lsl #6
     mov  x11, #0
 Lh_fold:
     ldr  s0, [x10, x11, lsl #2]
-    add  x12, x11, x13
-    ldr  s1, [x10, x12, lsl #2]
-    add  x12, x12, x13
-    ldr  s2, [x10, x12, lsl #2]
-    fadd s1, s1, s2
     fmov s3, #0.5
-    fmadd s0, s1, s3, s0              // note + (octave + fifth above) / 2
-    str  s0, [x10, x11, lsl #2]
+    add  x12, x11, x13                // the octave above
+    ldr  s1, [x10, x12, lsl #2]
+    add  x6, x11, x11
+    ldrb w6, [x17, x6]
+    bl   Lh_echoing
+    cbnz x7, 1f
+    fmadd s0, s1, s3, s0
+1:  add  x12, x12, x13                // the twelfth above
+    ldr  s1, [x10, x12, lsl #2]
+    add  x6, x11, x11
+    add  x6, x6, #1
+    ldrb w6, [x17, x6]
+    bl   Lh_echoing
+    cbnz x7, 2f
+    fmadd s0, s1, s3, s0
+2:  str  s0, [x10, x11, lsl #2]
     add  x11, x11, #1
     cmp  x11, x13
     b.lo Lh_fold
+    b    Lh_nofold
+// x7 = 1 if note w6 (255: none) is resting and we're receiving. Uses x8, x9 only.
+Lh_echoing:
+    mov  x7, #0
+    cbz  x14, 9f
+    cmp  w6, #255
+    b.eq 9f
+    RESTING x15, x16, x6, x7, x8
+9:  ret
 Lh_nofold:
 
     ldr  x22, [x21, #R_HOPN]          // h
@@ -503,8 +717,11 @@ Lh_align:                             // score one symbol's worth of alignments
     str  wzr, [x21, #R_NEED]
     str  wzr, [x21, #R_QSUM]
     str  wzr, [x21, #R_LOWQ]
-    ADRL x9, _pre                     // both ends start the tone history with the preamble
-    ldr  x10, [x9]
+    add  x0, x21, #R_NIBS
+    mov  w1, #0
+    mov  x2, #544
+    CALLC memset
+    ldr  x10, [x20, #M_PRE]           // both ends start the tone history with the preamble
     str  x10, [x21, #R_THIST]
     str  x10, [x21, #(R_THIST + 8)]
     str  x10, [x21, #(R_THIST + 16)]
@@ -521,13 +738,13 @@ Lh_recv:
     ldr  s1, [x21, #R_QSUM]
     fadd s1, s1, s6
     str  s1, [x21, #R_QSUM]
-    mov  x0, x21                      // each group's tone, skipping those still echoing
+    mov  x0, x21                      // this symbol's bits (tones still echoing left out)
     mov  x1, x20
     bl   _rx_symbol
-    ldr  w12, [x21, #R_NIB]
+    ldr  w12, [x21, #R_NIB]           // bits so far
     add  x13, x21, #R_NIBS
     ldr  w9, [x21, #R_LOWQ]           // the sender has stopped (or we lost it): don't wait
-    LDS  s1, Lk_lowq                  // for the rest of a message that isn't coming
+    ldr  s1, [x20, #M_QLOW]           // for the rest of a message that isn't coming
     fcmp s6, s1
     csinc w9, wzr, w9, ge
     str  w9, [x21, #R_LOWQ]
@@ -535,17 +752,11 @@ Lh_recv:
     b.hs Lh_gone
     ldr  w15, [x21, #R_NEED]
     cbnz w15, Lh_check
-    cmp  w12, #6
+    cmp  w12, #72
     b.lo Lh_done
     ldrb w0, [x13]                    // the length, three times: majority wins
-    ldrb w1, [x13, #1]
-    orr  w0, w1, w0, lsl #4
-    ldrb w1, [x13, #2]
-    ldrb w2, [x13, #3]
-    orr  w1, w2, w1, lsl #4
-    ldrb w2, [x13, #4]
-    ldrb w3, [x13, #5]
-    orr  w2, w3, w2, lsl #4
+    ldrb w1, [x13, #4]
+    ldrb w2, [x13, #8]
     cmp  w0, w1
     b.eq 9f
     cmp  w0, w2
@@ -562,8 +773,8 @@ Lh_recv:
     str  w0, [x21, #R_LEN]
     add  w10, w0, #2
     add  w10, w10, w9
-    lsl  w10, w10, #1
-    add  w10, w10, #6
+    lsl  w10, w10, #3
+    add  w10, w10, #24
     str  w10, [x21, #R_NEED]
     mov  w15, w10
 Lh_check:
@@ -603,35 +814,32 @@ Lh_nohdr:                             // a preamble with no sensible header: say
 Lh_done:
     LEAVE 32
 
-// _rx_symbol(rx *x0, mode *x1) — read one data symbol from this hop's energies: in each
-// group the loudest tone that hasn't played in the last KEX symbols (the room is still
-// ringing with those), its rank among the allowed tones is the nibble. Leaf.
+// _rx_symbol(rx *x0, mode *x1) — read one data symbol from this hop's energies and add its
+// BPS bits to the bit buffer. In each group the loudest tone that isn't resting gives its
+// rank among the tones allowed (a nibble); in Piano the two loudest notes give a pair (6 bits).
+// Leaf.
 _rx_symbol:
     ldr  w2, [x1, #M_NG]
     ldr  w3, [x1, #M_NV]
     ldr  w4, [x1, #M_KEX]
     mov  x16, #8
-    sub  x16, x16, x4                 // the excluded tones are hist[8-KEX .. 7]
+    sub  x16, x16, x4
     add  x5, x0, #R_ENER
-    ldr  w6, [x0, #R_NIB]
+    ldr  w6, [x1, #M_PAIR]
+    mov  x17, #0                      // the symbol's value
+    cbnz w6, Lrs_pair
     mov  x7, #0
 Lrs_g:
     add  x8, x0, #R_THIST
     add  x8, x8, x7, lsl #3
     mul  x9, x7, x3
-    add  x9, x5, x9, lsl #2
-    mov  x10, #-1                     // best tone so far
+    add  x6, x5, x9, lsl #2           // this group's energies
+    mov  x10, #-1
     mov  x11, #0
 Lrs_v:
-    mov  x12, x16
-1:  cmp  x12, #8
-    b.hs 2f
-    ldrb w13, [x8, x12]
-    cmp  w13, w11
-    b.eq Lrs_vnext                    // still echoing
-    add  x12, x12, #1
-    b    1b
-2:  ldr  s0, [x9, x11, lsl #2]
+    RESTING x8, x16, x11, x12, x13
+    cbnz x12, Lrs_vnext
+    ldr  s0, [x6, x11, lsl #2]
     tbnz x10, #63, 3f
     fcmp s0, s1
     b.le Lrs_vnext
@@ -641,85 +849,244 @@ Lrs_vnext:
     add  x11, x11, #1
     cmp  x11, x3
     b.lo Lrs_v
-    mov  x14, #0                      // rank among the allowed tones
-    mov  x11, #0
-Lrs_r:
-    cmp  x11, x10
-    b.hs Lrs_rdone
-    mov  x12, x16
-4:  cmp  x12, #8
-    b.hs 5f
-    ldrb w13, [x8, x12]
-    cmp  w13, w11
-    b.eq 6f
-    add  x12, x12, #1
-    b    4b
-5:  add  x14, x14, #1
-6:  add  x11, x11, #1
-    b    Lrs_r
-Lrs_rdone:
+    RANKOF x8, x16, x10, x14, x12, x13, x15
     and  x14, x14, #15
-    ldr  x15, [x8]                    // remember the tone (newest in the top byte)
-    lsr  x15, x15, #8
-    orr  x15, x15, x10, lsl #56
-    str  x15, [x8]
-    add  x15, x0, #R_NIBS
-    cmp  w6, #540
-    b.hs 7f
-    strb w14, [x15, x6]
-    add  w6, w6, #1
-7:  add  x7, x7, #1
+    PUSHT x8, x10
+    orr  x17, x14, x17, lsl #4
+    add  x7, x7, #1
     cmp  x7, x2
     b.lo Lrs_g
-    str  w6, [x0, #R_NIB]
+    lsl  x2, x2, #2                   // 4 bits a group
+    b    Lrs_put
+Lrs_pair:                             // Piano's two hands
+    sub  sp, sp, #32                  // the notes that aren't resting, low index first
+    add  x8, x0, #R_THIST
+    mov  x7, #0                       // how many
+    mov  x11, #0
+1:  RESTING x8, x16, x11, x12, x13
+    cbnz x12, 2f
+    strb w11, [sp, x7]
+    add  x7, x7, #1
+2:  add  x11, x11, #1
+    cmp  x11, x3
+    b.lo 1b
+    mov  x10, #0                      // a: the loudest
+    ldrb w11, [sp]
+    ldr  s1, [x5, x11, lsl #2]
+    mov  x12, #1
+3:  cmp  x12, x7
+    b.hs 4f
+    ldrb w11, [sp, x12]
+    ldr  s0, [x5, x11, lsl #2]
+    fcmp s0, s1
+    b.le 5f
+    fmov s1, s0
+    mov  x10, x12
+5:  add  x12, x12, #1
+    b    3b
+4:  ldrb w14, [sp, x10]               // b: the loudest of the rest that isn't one of a's
+    ADRL x6, _pair_forb               // overtones or undertones (those can't be paired)
+    add  x6, x6, x14, lsl #5
+    mov  x15, #-1
+    mov  x12, #0
+6:  cmp  x12, x7
+    b.hs 8f
+    cmp  x12, x10
+    b.eq 7f
+    ldrb w11, [sp, x12]
+    ldrb w13, [x6, x11]
+    cbnz w13, 7f
+    ldr  s0, [x5, x11, lsl #2]
+    tbnz x15, #63, 9f
+    fcmp s0, s2
+    b.le 7f
+9:  fmov s2, s0
+    mov  x15, x12
+7:  add  x12, x12, #1
+    b    6b
+8:  cmp  x10, x15                     // i < j: positions in the list
+    csel x13, x10, x15, lo
+    csel x14, x15, x10, lo
+    mov  x17, #0                      // count the allowed pairs before (i, j)
+    mov  x11, #0
+10: cmp  x11, x7
+    b.hs 14f
+    add  x12, x11, #1
+11: cmp  x12, x7
+    b.hs 13f
+    cmp  x11, x13
+    b.ne 12f
+    cmp  x12, x14
+    b.eq 14f
+12: ldrb w9, [sp, x11]
+    ADRL x6, _pair_forb
+    add  x6, x6, x9, lsl #5
+    ldrb w9, [sp, x12]
+    ldrb w9, [x6, x9]
+    cbnz w9, 15f
+    add  x17, x17, #1
+15: add  x12, x12, #1
+    b    11b
+13: add  x11, x11, #1
+    b    10b
+14: cmp  x17, #63
+    mov  x12, #63
+    csel x17, x17, x12, ls
+    ldrb w11, [sp, x13]               // remember both (low list position first)
+    PUSHT x8, x11
+    ldrb w11, [sp, x14]
+    PUSHT x8, x11
+    add  sp, sp, #32
+    mov  x2, #6
+Lrs_put:                              // x2 bits of x17, high bit first
+    ldr  w6, [x0, #R_NIB]
+    add  x8, x0, #R_NIBS
+    mov  x12, #4300
+    cmp  x6, x12
+    b.hs Lrs_end
+1:  cbz  x2, 2f
+    sub  x2, x2, #1
+    lsr  x13, x17, x2
+    and  x13, x13, #1
+    lsr  x14, x6, #3
+    and  x15, x6, #7
+    mov  x12, #7
+    sub  x15, x12, x15
+    ldrb w12, [x8, x14]
+    lsl  x13, x13, x15
+    orr  w12, w12, w13
+    strb w12, [x8, x14]
+    add  x6, x6, #1
+    b    1b
+2:  str  w6, [x0, #R_NIB]
+Lrs_end:
     ret
 
-// _tx_tones(mode *x0, uint8 *nibs x1, long count x2) — turn the nibbles after the preamble
-// into tones the same way: nibble d is the d-th tone not played in the last KEX symbols
-// of its group. Leaf.
-_tx_tones:
-    sub  sp, sp, #32
-    ldr  w3, [x0, #M_NG]
-    ldr  w4, [x0, #M_KEX]
-    mov  x16, #8
-    sub  x16, x16, x4
-    ADRL x9, _pre
-    ldr  x10, [x9]
+// _tx_symbols(mode *x0, const uint8 *frame x1, long bits x2, long nsym x3) — the tones of
+// every symbol into _tx_tones (4 slots a symbol, 255 = silent): the preamble, then BPS bits
+// at a time, chosen from the tones that aren't resting exactly as the receiver will. Leaf.
+_tx_symbols:
+    sub  sp, sp, #80                  // [0] histories  [32] bit position  [40] spare  [48] list
+    ldr  x10, [x0, #M_PRE]
     stp  x10, x10, [sp]
     stp  x10, x10, [sp, #16]
-    mov  x5, #NPRE
-    mul  x5, x5, x3                   // first nibble after the preamble
-Ltt_i:
-    cmp  x5, x2
-    b.hs Ltt_done
-    udiv x6, x5, x3
-    msub x6, x6, x3, x5               // group
-    add  x8, sp, x6, lsl #3
-    ldrb w7, [x1, x5]                 // d
-    mov  x11, #0                      // candidate tone
-Ltt_v:
-    mov  x12, x16
-1:  cmp  x12, #8
-    b.hs 2f
-    ldrb w13, [x8, x12]
-    cmp  w13, w11
-    b.eq 3f
-    add  x12, x12, #1
-    b    1b
-2:  cbz  x7, Ltt_found                // the d-th allowed tone
-    sub  x7, x7, #1
-3:  add  x11, x11, #1
-    b    Ltt_v
-Ltt_found:
-    strb w11, [x1, x5]
-    ldr  x15, [x8]
-    lsr  x15, x15, #8
-    orr  x15, x15, x11, lsl #56
-    str  x15, [x8]
+    ADRL x4, _tx_tones
+    mov  x5, #0                       // all slots silent
+    mov  x6, #255
+    lsl  x7, x3, #2
+0:  cmp  x5, x7
+    b.hs 1f
+    strb w6, [x4, x5]
     add  x5, x5, #1
-    b    Ltt_i
-Ltt_done:
-    add  sp, sp, #32
+    b    0b
+1:  ldr  w5, [x0, #M_NG]
+    ldr  w15, [x0, #M_KEX]
+    mov  x16, #8
+    sub  x16, x16, x15
+    mov  x6, #0                       // symbol
+Lts_pre:
+    cmp  x6, #NPRE
+    b.hs Lts_data
+    add  x9, x0, #M_PRE
+    ldrb w7, [x9, x6]
+    add  x11, x4, x6, lsl #2
+    mov  x8, #0
+2:  strb w7, [x11, x8]
+    add  x8, x8, #1
+    cmp  x8, x5
+    b.lo 2b
+    add  x6, x6, #1
+    b    Lts_pre
+Lts_data:
+    mov  x12, #0                      // bit position
+    str  x12, [sp, #32]
+Lts_sym:
+    cmp  x6, x3
+    b.hs Lts_done
+    ldr  w13, [x0, #M_BPS]            // read BPS bits (zeros past the end)
+    ldr  x12, [sp, #32]
+    mov  x17, #0
+3:  cbz  x13, 4f
+    mov  x8, #0
+    cmp  x12, x2
+    b.hs 5f
+    lsr  x10, x12, #3
+    ldrb w10, [x1, x10]
+    and  x11, x12, #7
+    mov  x8, #7
+    sub  x11, x8, x11
+    lsr  x10, x10, x11
+    and  x8, x10, #1
+5:  orr  x17, x8, x17, lsl #1
+    add  x12, x12, #1
+    sub  x13, x13, #1
+    b    3b
+4:  str  x12, [sp, #32]
+    ldr  w14, [x0, #M_PAIR]
+    cbnz w14, Lts_pair
+    mov  x7, #0                       // each group: its nibble's tone
+Lts_g:
+    cmp  x7, x5
+    b.hs Lts_next
+    sub  x8, x5, x7
+    sub  x8, x8, #1
+    lsl  x8, x8, #2
+    lsr  x10, x17, x8
+    and  x10, x10, #15
+    add  x8, sp, x7, lsl #3
+    NTHFREE x8, x16, x10, x11, x13, x15, x12
+    add  x10, x4, x6, lsl #2
+    strb w11, [x10, x7]
+    PUSHT x8, x11
+    add  x7, x7, #1
+    b    Lts_g
+Lts_pair:                             // value -> the value-th allowed pair (i < j)
+    mov  x8, sp
+    mov  x7, #0                       // the notes that aren't resting, into sp+16 ..
+    mov  x11, #0
+1:  RESTING x8, x16, x11, x12, x13
+    cbnz x12, 2f
+    add  x9, sp, #48
+    strb w11, [x9, x7]
+    add  x7, x7, #1
+2:  add  x11, x11, #1
+    ldr  w9, [x0, #M_NV]
+    cmp  x11, x9
+    b.lo 1b
+    add  x15, sp, #48
+    mov  x11, #0
+3:  cmp  x11, x7
+    b.hs 7f
+    add  x12, x11, #1
+4:  cmp  x12, x7
+    b.hs 6f
+    ldrb w9, [x15, x11]
+    ADRL x10, _pair_forb
+    add  x10, x10, x9, lsl #5
+    ldrb w9, [x15, x12]
+    ldrb w9, [x10, x9]
+    cbnz w9, 5f
+    cbz  x17, 8f                      // this one
+    sub  x17, x17, #1
+5:  add  x12, x12, #1
+    b    4b
+6:  add  x11, x11, #1
+    b    3b
+7:  mov  x11, #0                      // (can't happen: there are always 64)
+    mov  x12, #1
+8:  ldrb w10, [x15, x11]
+    ldrb w11, [x15, x12]
+    add  x9, x4, x6, lsl #2
+    strb w10, [x9]
+    strb w11, [x9, #1]
+    mov  x8, sp
+    PUSHT x8, x10
+    PUSHT x8, x11
+Lts_next:
+    add  x6, x6, #1
+    b    Lts_sym
+Lts_done:
+    add  sp, sp, #80
     ret
 
 // float _pre_score(rx *x0, mode *x1, long h x2) — if at least 6 of the 8 symbols ending at
@@ -735,7 +1102,7 @@ _pre_score:
     fmov s0, wzr
     mov  x6, #0                       // symbols missed
     mov  x12, #0
-    ADRL x13, _pre
+    add  x13, x1, #M_PRE
 Lps_j:
     mov  x14, #(NPRE - 1)
     sub  x14, x14, x12
@@ -777,7 +1144,7 @@ Lps_no:
     fmov s0, #-1.0
     ret
 
-// _rx_finish(long mode) — nibbles to bytes, unwhiten, repair, check, hand over
+// _rx_finish(long mode) — bits to bytes, unwhiten, repair, check, unpack, hand over
 _rx_finish:
     ENTER 16
     mov  x19, x0
@@ -789,17 +1156,22 @@ _rx_finish:
     ldr  w23, [x20, #M_NR]
     add  x24, x22, #2
     add  x24, x24, x23                // n
-    add  x9, x21, #R_NIBS
-    add  x9, x9, #6
+    add  x9, x21, #R_NIBS             // the body, around the 3 length bytes
     add  x10, x21, #R_BYTES
-    mov  x11, #0
-1:  ldrb w12, [x9], #1
-    ldrb w13, [x9], #1
-    orr  w12, w13, w12, lsl #4
-    strb w12, [x10, x11]
-    add  x11, x11, #1
-    cmp  x11, x24
-    b.lo 1b
+    mov  x11, #1                      // frame byte
+    mov  x12, #0                      // body byte
+0:  cmp  x12, x24
+    b.hs 1f
+    cmp  x11, #4
+    b.eq 2f
+    cmp  x11, #8
+    b.eq 2f
+    ldrb w13, [x9, x11]
+    strb w13, [x10, x12]
+    add  x12, x12, #1
+2:  add  x11, x11, #1
+    b    0b
+1:
     add  x0, x21, #R_BYTES
     mov  x1, x24
     bl   _whiten
@@ -827,11 +1199,18 @@ _rx_finish:
     ldr  x11, [x21, x10]
     add  x11, x11, #1
     str  x11, [x21, x10]
+    add  x0, x21, #R_BYTES            // unpack the text
+    mov  x1, x22
+    ADRL x2, _rx_text
+    mov  x3, #2048
+    bl   _unpack
+    tbnz x0, #63, Lf_lost
+    mov  x22, x0
     ADRL x9, _rx_sink
     ldr  x9, [x9]
     cbz  x9, Lf_done
     mov  x0, x19
-    add  x1, x21, #R_BYTES
+    ADRL x1, _rx_text
     mov  x2, x22
     ldr  x3, [sp, #96]
     blr  x9
@@ -865,22 +1244,20 @@ _tx_maxlen:
     sub  x0, x0, x10
     ret
 
-// long _tx_samples(long mode, long len) — how many samples a message of len bytes takes
+// long _tx_samples(long mode, long len) — how many samples a message of len packed bytes takes
 .globl _tx_samples
 _tx_samples:
     ADRL x9, _modes
     add  x9, x9, x0, lsl #MODE_SHIFT
     ldr  w10, [x9, #M_NR]
-    ldr  w11, [x9, #M_NG]
-    add  x12, x1, #2
+    ldr  w11, [x9, #M_BPS]
+    add  x12, x1, #5                  // 3 length bytes + 2 CRC
     add  x12, x12, x10
-    lsl  x12, x12, #1
-    add  x12, x12, #6                 // header + body nibbles
-    mov  x13, #NPRE
-    madd x12, x13, x11, x12           // + preamble
+    lsl  x12, x12, #3                 // bits
     add  x12, x12, x11
     sub  x12, x12, #1
-    udiv x12, x12, x11                // symbols
+    udiv x12, x12, x11                // data symbols
+    add  x12, x12, #NPRE
     ldr  w13, [x9, #M_S]
     mul  x0, x12, x13
     mov  x17, #LEAD
@@ -890,18 +1267,24 @@ _tx_samples:
     ret
 
 // long _tx_render(long mode, const uint8 *msg, long len)
-//   Builds the whole message as sound in _tx_buf (48 kHz mono float) and returns
+//   Packs the text, then builds the whole message as sound in _tx_buf (48 kHz mono float) and returns
 //   the number of samples, or 0 if the message is empty or too long.
 .globl _tx_render
 _tx_render:
-    ENTER 64                          // [96] n  [104] symbols  [112] samples  [120] room
+    ENTER 64                          // [96] n  [104] symbols  [112] samples  [120] room  [128] bits
     mov  x19, x0
     ADRL x20, _modes
     add  x20, x20, x19, lsl #MODE_SHIFT
-    mov  x21, x2
-    mov  x22, x1
+    cbz  x2, Ltx_bad
+    mov  x0, x1                       // shrink the text first
+    mov  x1, x2
+    ADRL x2, _tx_text
+    mov  x3, #256
+    bl   _pack
+    tbnz x0, #63, Ltx_bad
+    mov  x21, x0                      // L: packed bytes
+    ADRL x22, _tx_text
     ldr  w23, [x20, #M_NR]
-    cbz  x21, Ltx_bad
     mov  x9, #253
     sub  x9, x9, x23
     cmp  x21, x9
@@ -930,58 +1313,41 @@ _tx_render:
     mov  x1, x9
     bl   _whiten
 
-    ADRL x22, _tx_nibs                // the symbols, as nibbles
-    mov  x10, #0
-    ldr  w11, [x20, #M_NG]
-    ADRL x12, _pre
-    mov  x13, #0
-1:  ldrb w14, [x12, x13]
-    mov  x15, #0
-2:  strb w14, [x22, x10]
-    add  x10, x10, #1
-    add  x15, x15, #1
-    cmp  x15, x11
-    b.lo 2b
-    add  x13, x13, #1
-    cmp  x13, #NPRE
-    b.lo 1b
-    mov  x13, #0
-3:  lsr  w14, w21, #4
-    strb w14, [x22, x10]
-    add  x10, x10, #1
-    and  w14, w21, #15
-    strb w14, [x22, x10]
-    add  x10, x10, #1
-    add  x13, x13, #1
-    cmp  x13, #3
-    b.lo 3b
+    ADRL x22, _tx_frame               // the frame: L, 3 body bytes, L, 3 more, L, the rest
+    strb w21, [x22]                   // (the copies of L land in different symbols, so one
+    strb w21, [x22, #4]               // bad symbol can't spoil two of them)
+    strb w21, [x22, #8]
     ldr  x9, [sp, #96]
-    mov  x13, #0
-4:  ldrb w14, [x24, x13]
-    lsr  w15, w14, #4
-    strb w15, [x22, x10]
+    mov  x10, #0                      // body byte
+    mov  x11, #1                      // frame byte
+0:  cmp  x10, x9
+    b.hs 1f
+    cmp  x11, #4
+    b.eq 2f
+    cmp  x11, #8
+    b.eq 2f
+    ldrb w12, [x24, x10]
+    strb w12, [x22, x11]
     add  x10, x10, #1
-    and  w15, w14, #15
-    strb w15, [x22, x10]
-    add  x10, x10, #1
-    add  x13, x13, #1
-    cmp  x13, x9
-    b.lo 4b
-5:  udiv x13, x10, x11
-    msub x13, x13, x11, x10
-    cbz  x13, 6f
-    strb wzr, [x22, x10]
-    add  x10, x10, #1
-    b    5b
-6:  str  x10, [sp, #120]
-    mov  x0, x20                      // nibbles -> tones (resting the echoing ones)
+2:  add  x11, x11, #1
+    b    0b
+1:
+    ldr  x9, [sp, #96]
+    add  x9, x9, #3
+    lsl  x9, x9, #3
+    str  x9, [sp, #128]               // bits
+    ldr  w10, [x20, #M_BPS]
+    add  x11, x9, x10
+    sub  x11, x11, #1
+    udiv x11, x11, x10
+    add  x13, x11, #NPRE
+    str  x13, [sp, #104]              // symbols
+    mov  x0, x20                      // every symbol's tones
     mov  x1, x22
-    mov  x2, x10
-    bl   _tx_tones
-    ldr  x10, [sp, #120]
-    ldr  w11, [x20, #M_NG]
-    udiv x13, x10, x11
-    str  x13, [sp, #104]
+    mov  x2, x9
+    mov  x3, x13
+    bl   _tx_symbols
+    ldr  x13, [sp, #104]
     ldr  w14, [x20, #M_S]
     mul  x15, x13, x14
     mov  x17, #LEAD
@@ -1026,6 +1392,13 @@ Lsym:
     ldr  x12, [sp, #112]
     sub  x12, x12, x11
     str  x12, [sp, #120]
+    mov  x21, #0                      // each sounding slot of the symbol
+Lslot:
+    ADRL x9, _tx_tones
+    add  x9, x9, x23, lsl #2
+    ldrb w10, [x9, x21]
+    cmp  w10, #255
+    b.eq Lslot_next
     ldr  w9, [x20, #M_VOICE]
     cmp  w9, #1
     b.eq Lv_chirp
@@ -1033,18 +1406,16 @@ Lsym:
     b.eq Lv_fast
     cmp  w9, #3
     b.eq Lv_silent
-    ldrb w9, [x22, x23]               // piano
-    add  x10, x20, #M_FREQ
-    ldr  s0, [x10, x9, lsl #2]
+    add  x11, x20, #M_FREQ            // piano
+    ldr  s0, [x11, x10, lsl #2]
     ldr  s1, [x20, #M_AMP]
     mov  x0, x24
     ldr  x1, [sp, #120]
     bl   _v_piano
-    b    Lsym_next
+    b    Lslot_next
 Lv_chirp:
-    ldrb w9, [x22, x23]
-    add  x10, x20, #M_FREQ
-    ldr  s1, [x10, x9, lsl #2]
+    add  x11, x20, #M_FREQ
+    ldr  s1, [x11, x10, lsl #2]
     LDS  s0, Lk_glide
     fmul s0, s0, s1
     ldr  s2, [x20, #M_AMP]
@@ -1053,17 +1424,12 @@ Lv_chirp:
     lsr  x2, x1, #2
     mov  x3, #96
     bl   _v_tone
-    b    Lsym_next
+    b    Lslot_next
 Lv_fast:
-    mov  x21, #0                      // group g (the length isn't needed any more)
-Lvf_g:
-    lsl  x9, x23, #2
-    add  x9, x9, x21
-    ldrb w9, [x22, x9]
-    ldr  w10, [x20, #M_NV]
-    madd x9, x21, x10, x9             // group g's tones start at g * NV
-    add  x10, x20, #M_FREQ
-    ldr  s0, [x10, x9, lsl #2]
+    ldr  w11, [x20, #M_NV]
+    madd x10, x21, x11, x10           // group g's tones start at g * NV
+    add  x11, x20, #M_FREQ
+    ldr  s0, [x11, x10, lsl #2]
     fmov s1, s0
     ldr  s2, [x20, #M_AMP]
     mov  x0, x24
@@ -1071,14 +1437,10 @@ Lvf_g:
     mov  x2, #0
     mov  x3, #96
     bl   _v_tone
-    add  x21, x21, #1
-    cmp  x21, #4
-    b.lo Lvf_g
-    b    Lsym_next
+    b    Lslot_next
 Lv_silent:                            // one high tone, faded in and out over 5 ms
-    ldrb w9, [x22, x23]
-    add  x10, x20, #M_FREQ
-    ldr  s0, [x10, x9, lsl #2]
+    add  x11, x20, #M_FREQ
+    ldr  s0, [x11, x10, lsl #2]
     fmov s1, s0
     ldr  s2, [x20, #M_AMP]
     mov  x0, x24
@@ -1086,6 +1448,10 @@ Lv_silent:                            // one high tone, faded in and out over 5 
     mov  x2, #0
     mov  x3, #240
     bl   _v_tone
+Lslot_next:
+    add  x21, x21, #1
+    cmp  x21, #4
+    b.lo Lslot
 Lsym_next:
     add  x23, x23, #1
     b    Lsym

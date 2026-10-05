@@ -27,10 +27,16 @@ Ls_t_silent: .asciz "silent: 18-19.4 kHz through a room with echoes and hiss"
 Ls_t_sdrift: .asciz "silent: with the clocks 200 ppm apart"
 Ls_t_phigh:  .asciz "piano: through a tiny speaker that loses the low notes"
 Ls_t_pdrift: .asciz "piano: with the clocks 200 ppm apart"
+Ls_t_duet:   .asciz "duet: two notes a beat, through a room with echoes and hiss"
+Ls_t_ddrift: .asciz "duet: with the clocks 200 ppm apart"
 Ls_t_stop:   .asciz "a message cut off half way is given up quickly"
-Ls_t_long:   .asciz "fast: the longest message (233 bytes)"
+Ls_t_long:   .asciz "fast: the longest message (232 characters that don't pack)"
 Ls_t_max:    .asciz "a message one byte too long is refused"
 Ls_done:     .asciz "self-tests done"
+Ls_t_pack:   .asciz "packing: English text shrinks and comes back the same"
+Ls_t_raw:    .asciz "packing: bytes that don't pack are sent as they are"
+Ls_t_badpk:  .asciz "packing: a damaged packed message is refused"
+Ls_english:  .asciz "Meet me at the corner in ten minutes, and bring the piano! It's 6:30."
 
 .p2align 2
 Lk_inv23:    .float 1.1920928955078125e-07
@@ -60,6 +66,8 @@ _t_fails:    .quad 0
 _t_seed:     .quad 12345
 _t_ch:       .quad 0
 _t_chn:      .quad 0
+_t_pk:       .space 512
+_t_up:       .space 512
 
 .text
 .p2align 2
@@ -102,6 +110,16 @@ _selftest:
     cmp  x0, #0
     cset x0, eq
     ADRL x1, Ls_t_rs0
+    bl   _result
+
+    bl   _t_pack
+    ADRL x1, Ls_t_pack
+    bl   _result
+    bl   _t_raw
+    ADRL x1, Ls_t_raw
+    bl   _result
+    bl   _t_badpack
+    ADRL x1, Ls_t_badpk
     bl   _result
 
     mov  x0, #MODE_PIANO
@@ -159,6 +177,16 @@ _selftest:
     bl   _t_loop
     ADRL x1, Ls_t_pdrift
     bl   _result
+    mov  x0, #MODE_DUET
+    mov  x1, #0
+    bl   _t_loop
+    ADRL x1, Ls_t_duet
+    bl   _result
+    mov  x0, #MODE_DUET
+    mov  x1, #2
+    bl   _t_loop
+    ADRL x1, Ls_t_ddrift
+    bl   _result
     bl   _t_cut
     ADRL x1, Ls_t_stop
     bl   _result
@@ -169,9 +197,9 @@ _selftest:
     ADRL x1, Ls_t_quiet
     bl   _result
 
-    mov  x0, #MODE_FAST               // 234 bytes in Fast: refused
+    mov  x0, #MODE_FAST               // 233 characters in Fast: refused
     ADRL x1, _t_long
-    mov  x2, #234
+    mov  x2, #233
     bl   _tx_render
     cmp  x0, #0
     cset x0, eq
@@ -314,7 +342,7 @@ _t_loop:
     mov  x19, x0
     mov  x20, x1
     tbz  x20, #3, 1f
-    ADRL x22, _t_long                 // 233 bytes of text
+    ADRL x22, _t_long                 // 232 bytes of text
     mov  x9, #0
 0:  mov  x10, #33
     udiv x11, x9, x10
@@ -322,9 +350,9 @@ _t_loop:
     add  x10, x10, #65
     strb w10, [x22, x9]
     add  x9, x9, #1
-    cmp  x9, #233
+    cmp  x9, #232
     b.lo 0b
-    mov  x23, #233
+    mov  x23, #232
     b    2f
 1:  ADRL x22, Ls_msg
     mov  x0, x22
@@ -659,4 +687,95 @@ _t_cut:
 _t_calloc:
     ENTER 0
     CALLC calloc
+    LEAVE 0
+
+// long _t_pack(void) — English packs to well under its length and unpacks to itself
+_t_pack:
+    ENTER 0
+    ADRL x0, Ls_english
+    CALLC strlen
+    mov  x19, x0
+    ADRL x0, Ls_english
+    mov  x1, x19
+    ADRL x2, _t_pk
+    mov  x3, #512
+    bl   _pack
+    mov  x20, x0
+    mov  x12, #7                      // at most 70% of the size
+    mul  x11, x19, x12
+    mov  x12, #10
+    mul  x9, x20, x12
+    cmp  x9, x11
+    b.hi 1f
+    ADRL x0, _t_pk
+    mov  x1, x20
+    ADRL x2, _t_up
+    mov  x3, #512
+    bl   _unpack
+    cmp  x0, x19
+    b.ne 1f
+    ADRL x0, _t_up
+    ADRL x1, Ls_english
+    mov  x2, x19
+    CALLC memcmp
+    cmp  w0, #0
+    cset x0, eq
+    LEAVE 0
+1:  mov  x0, #0
+    LEAVE 0
+
+// long _t_raw(void) — 100 bytes of 0x80..0xE3 (no good as English) go as they are
+_t_raw:
+    ENTER 0
+    ADRL x19, _t_up
+    mov  x9, #0
+0:  add  x10, x9, #0x80
+    strb w10, [x19, x9]
+    add  x9, x9, #1
+    cmp  x9, #100
+    b.lo 0b
+    mov  x0, x19
+    mov  x1, #100
+    ADRL x2, _t_pk
+    mov  x3, #512
+    bl   _pack
+    cmp  x0, #101
+    b.ne 1f
+    ADRL x9, _t_pk
+    ldrb w9, [x9]
+    cbnz w9, 1f
+    ADRL x0, _t_pk
+    mov  x1, #101
+    ADRL x2, _t_long
+    mov  x3, #256
+    bl   _unpack
+    cmp  x0, #100
+    b.ne 1f
+    ADRL x0, _t_long
+    mov  x1, x19
+    mov  x2, #100
+    CALLC memcmp
+    cmp  w0, #0
+    cset x0, eq
+    LEAVE 0
+1:  mov  x0, #0
+    LEAVE 0
+
+// long _t_badpack(void) — packed English cut short has no end-of-text: refused
+_t_badpack:
+    ENTER 0
+    ADRL x0, Ls_english
+    CALLC strlen
+    mov  x1, x0
+    ADRL x0, Ls_english
+    ADRL x2, _t_pk
+    mov  x3, #512
+    bl   _pack
+    sub  x1, x0, #3
+    ADRL x0, _t_pk
+    ADRL x2, _t_up
+    mov  x3, #512
+    bl   _unpack
+    cmp  x0, #0
+    cset x0, lt
     LEAVE 0

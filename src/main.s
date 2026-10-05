@@ -78,26 +78,28 @@ Ls_piano:       .asciz "Piano"
 Ls_chirp:       .asciz "Chirp"
 Ls_fast:        .asciz "Fast"
 Ls_silent:      .asciz "Silent"
-Ls_sp_piano:    .asciz "about 3 characters a second"
-Ls_sp_chirp:    .asciz "about 14 characters a second"
-Ls_sp_fast:     .asciz "about 50 characters a second"
-Ls_sp_silent:   .asciz "about 12 a second, nearly inaudible"
+Ls_duet:        .asciz "Duet"
+Ls_sp_piano:    .asciz "up to 6 characters a second"
+Ls_sp_chirp:    .asciz "up to 25 characters a second"
+Ls_sp_fast:     .asciz "up to 90 a second, up close"
+Ls_sp_silent:   .asciz "up to 22 a second, near-silent"
+Ls_sp_duet:     .asciz "two hands, up to 9 a second, up close"
 Ls_placeholder: .asciz "Type a message, then press Return to play it"
 Ls_est_empty:   .asciz "Other Macs running asmtone will write it down."
-Ls_est_fmt:     .asciz "%ld bytes \302\267 %.1f seconds of sound"
-Ls_est_long:    .asciz "%ld bytes \342\200\224 too long: one %s message carries %ld"
+Ls_est_fmt:     .asciz "%ld characters \302\267 %.1f seconds of sound"
+Ls_est_long:    .asciz "%ld characters \342\200\224 too long for one %s message"
 Ls_play:        .asciz "Play"
 Ls_stop:        .asciz "Stop"
 Ls_listen:      .asciz "Listen"
 Ls_copylast:    .asciz "Copy Last"
 Ls_clear:       .asciz "Clear"
 Ls_st_play:     .asciz "Playing\342\200\246"
-Ls_st_listen:   .asciz "Listening for all four"
+Ls_st_listen:   .asciz "Listening for every mode"
 Ls_st_off:      .asciz "Not listening"
 Ls_st_hear:     .asciz "Hearing %s\342\200\246 %ld%%"
 Ls_st_mic:      .asciz "Microphone access is off (System Settings \342\200\272 Privacy & Security \342\200\272 Microphone)"
 Ls_st_err:      .asciz "Couldn't open the microphone (%ld) \342\200\224 try Listen again"
-Ls_st_long:     .asciz "Too long for one %s message (%ld bytes at most)"
+Ls_st_long:     .asciz "Too long for one %s message \342\200\224 shorten it or send it in parts"
 Ls_st_busy:     .asciz "Still playing \342\200\224 press Stop first"
 Ls_st_noclip:   .asciz "The clipboard has no text"
 Ls_counts:      .asciz "%ld heard \302\267 %ld repaired \302\267 %ld lost"
@@ -112,7 +114,7 @@ Ls_a_failed:    .asciz "showFailed:"
 Ls_fail_dir:    .asciz "%s/Library/Application Support/asmtone"
 Ls_fail_path:   .asciz "%s/last-failed-message.wav"
 Ls_fail_none:   .asciz "No failed message yet"
-Ls_fast_far:    .asciz "Fast needs the Macs close together \342\200\224 from further away use Chirp, Silent or Piano"
+Ls_fast_far:    .asciz "Fast and Duet need the Macs close together \342\200\224 from further away use Chirp, Silent or Piano"
 Ls_st_clip:     .asciz "Too loud: the microphone is overloading \342\200\224 turn the other Mac down or move apart"
 Ls_NSWorkspace: .asciz "NSWorkspace"
 Ls_NSURL:       .asciz "NSURL"
@@ -139,6 +141,7 @@ Ls_mi_piano:    .asciz "Send Clipboard as Piano"
 Ls_mi_chirp:    .asciz "Send Clipboard as Chirp"
 Ls_mi_fast:     .asciz "Send Clipboard as Fast"
 Ls_mi_silent:   .asciz "Send Clipboard as Silent"
+Ls_mi_duet:     .asciz "Send Clipboard as Duet"
 Ls_mi_listen:   .asciz "Listen"
 Ls_mi_copy:     .asciz "Copy Last Message"
 Ls_mi_open:     .asciz "Open asmtone"
@@ -172,6 +175,7 @@ Ls_key_1:       .asciz "1"
 Ls_key_2:       .asciz "2"
 Ls_key_3:       .asciz "3"
 Ls_key_4:       .asciz "4"
+Ls_key_5:       .asciz "5"
 Ls_key_l:       .asciz "l"
 // selectors and classes
 Ls_NSApplication:  .asciz "NSApplication"
@@ -354,8 +358,8 @@ Lmic_block:                               // a global block: ^(BOOL granted) { .
     .quad Lmic_block_desc
 Lmic_block_desc:
     .quad 0, 32
-Lmode_names:  .quad Ls_piano, Ls_chirp, Ls_fast, Ls_silent
-Lmode_speeds: .quad Ls_sp_piano, Ls_sp_chirp, Ls_sp_fast, Ls_sp_silent
+Lmode_names:  .quad Ls_piano, Ls_chirp, Ls_fast, Ls_silent, Ls_duet
+Lmode_speeds: .quad Ls_sp_piano, Ls_sp_chirp, Ls_sp_fast, Ls_sp_silent, Ls_sp_duet
 
 _g_app:      .quad 0
 _g_ctl:      .quad 0
@@ -454,7 +458,7 @@ _build_app:
     mov  x2, x0
     mov  x0, x19
     MSG1 Ls_integerForKey
-    cmp  x0, #3
+    cmp  x0, #4
     csel x0, x0, xzr, ls
     PUT  x0, _g_mode
     mov  x2, x0
@@ -843,6 +847,13 @@ _send_items:
     mov  x5, #3
     bl   _menu_item
     mov  x0, x19
+    ADRL x1, Ls_mi_duet
+    ADRL x2, Ls_a_clip
+    ADRL x3, Ls_key_5
+    GET  x4, _g_ctl
+    mov  x5, #4
+    bl   _menu_item
+    mov  x0, x19
     bl   _add_separator
     mov  x0, x19
     ADRL x1, Ls_mi_listen
@@ -857,7 +868,7 @@ _send_items:
 // The window
 // ---------------------------------------------------------------------------
 _build_window:
-    ENTER 32
+    ENTER 48
     CLS  Ls_NSWindow
     MSG0 Ls_alloc
     mov  x19, x0
@@ -909,9 +920,12 @@ _build_window:
     ADRL x0, Ls_silent
     bl   _nsstr
     str  x0, [sp, #120]
+    ADRL x0, Ls_duet
+    bl   _nsstr
+    str  x0, [sp, #128]
     CLS  Ls_NSArray
     add  x2, sp, #96
-    mov  x3, #4
+    mov  x3, #5
     MSG2 Ls_arrayObjs
     mov  x21, x0
     ADRL x0, Ls_a_mode
@@ -1093,7 +1107,7 @@ _build_window:
     GET  x0, _g_win                       // start in the message field
     GET  x2, _g_field
     MSG1 Ls_makeFirstResp
-    LEAVE 32
+    LEAVE 48
 
 // _dim(id label) — secondary text colour
 _dim:
@@ -1224,17 +1238,20 @@ _update_est:
     cbnz x20, 1f
     ADRL x0, Ls_est_empty
     b    3f
-1:  GET  x0, _g_mode
+1:  mov  x0, x19                         // the size it packs to
+    mov  x1, x20
+    bl   _pack_len
+    mov  x22, x0
+    GET  x0, _g_mode
     bl   _tx_maxlen
     mov  x21, x0
-    cmp  x20, x21
+    cmp  x22, x21
     b.ls 2f
     str  x20, [sp]                        // too long
     GET  x9, _g_mode
     ADRL x10, Lmode_names
     ldr  x9, [x10, x9, lsl #3]
     str  x9, [sp, #8]
-    str  x21, [sp, #16]
     ADRL x0, _g_buf
     mov  x1, #512
     ADRL x2, Ls_est_long
@@ -1242,7 +1259,7 @@ _update_est:
     ADRL x0, _g_buf
     b    3f
 2:  GET  x0, _g_mode
-    mov  x1, x20
+    mov  x1, x22
     bl   _tx_samples
     ucvtf d0, x0
     LDD  d1, Lc_sr
@@ -1468,12 +1485,15 @@ _m_send:
     bl   _strlen
     mov  x20, x0
     cbz  x20, Lsend_beep
+    mov  x0, x19
+    mov  x1, x20
+    bl   _pack_len
+    mov  x21, x0
     GET  x0, _g_mode
     bl   _tx_maxlen
-    cmp  x20, x0
+    cmp  x21, x0
     b.ls 2f
-    str  x0, [sp, #8]                     // too long
-    GET  x9, _g_mode
+    GET  x9, _g_mode                      // too long
     ADRL x10, Lmode_names
     ldr  x9, [x10, x9, lsl #3]
     str  x9, [sp]
@@ -1546,7 +1566,7 @@ _m_mode:
     ENTER 0
     GET  x0, _g_seg
     MSG0 Ls_selSeg
-    cmp  x0, #3
+    cmp  x0, #4
     csel x0, x0, xzr, ls
     PUT  x0, _g_mode
     mov  x19, x0
@@ -1600,7 +1620,7 @@ _m_heard:
     MSG0 Ls_bytes
     mov  x21, x0
     ldrb w22, [x21]                       // mode
-    cmp  w22, #3
+    cmp  w22, #4
     b.hi 9f
     ldrb w9, [x21, #2]
     cbz  w9, 1f
@@ -1620,8 +1640,11 @@ _m_heard:
     mov  x4, #0
     bl   _log_line
     bl   _save_failed                     // keep the sound, for Show Last Failed Message
-    cmp  x22, #MODE_FAST                  // Fast is the one that needs the Macs close
+    cmp  x22, #MODE_FAST                  // Fast and Duet need the Macs close
+    b.eq 0f
+    cmp  x22, #MODE_DUET
     b.ne 8f
+0:
     ADRL x0, Ls_fast_far
     bl   _notice
     b    8f
@@ -1734,7 +1757,7 @@ _m_tick:
     bl   _rx_progress
     tbz  x0, #63, 3f
     add  x20, x20, #1
-    cmp  x20, #4
+    cmp  x20, #5
     b.lo 2b
     b    4f
 3:  mov  x19, x0
@@ -1864,7 +1887,7 @@ _m_clip:
 2:  mov  x20, x0
     mov  x0, x19
     MSG0 Ls_tag
-    cmp  x0, #3
+    cmp  x0, #4
     csel x21, x0, xzr, ls
     GET  x0, _g_seg
     mov  x2, x21
